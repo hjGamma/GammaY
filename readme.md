@@ -1,5 +1,6 @@
 <h1 id="cd6addd0"><font style="color:rgb(31, 35, 40);">GammaY——Web Application Scanner.</font></h1>
 
+![image](https://github.com/user-attachments/assets/c18a2208-096b-453a-af2b-9b49efa79afa)
 
 <font style="color:rgb(31, 35, 40);">  
 </font><font style="color:rgb(31, 35, 40);">GammaY is a Go-based web application scanner. It integrates the advantages of flexibility, scalability, and comprehensiveness.</font>
