@@ -17,7 +17,7 @@
 
 <font style="color:rgb(31, 35, 40);">Command contains nmap, subdomain detection, sqlmap, xss, Poc,version... Detecting based on different vulnerabilities</font>
 
-#Module
+<h2 id="installation"><font style="color:rgb(31, 35, 40);">Module</font></h2>
 
-##Nmap
+<h3 id="installation"><font style="color:rgb(31, 35, 40);">Nmap</font></h3>
 ![image](https://github.com/user-attachments/assets/d7640605-8115-4d8e-a78f-24ee9e14caad)
