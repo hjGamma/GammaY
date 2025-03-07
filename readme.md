@@ -20,4 +20,5 @@
 <h2 id="installation"><font style="color:rgb(31, 35, 40);">Module</font></h2>
 
 <h3 id="installation"><font style="color:rgb(31, 35, 40);">Nmap</font></h3>
-![image](https://github.com/user-attachments/assets/d7640605-8115-4d8e-a78f-24ee9e14caad)
+
+![image](https://github.com/user-attachments/assets/debe9c93-4fed-4eac-9f29-0592ab7d0355)
