@@ -24,7 +24,7 @@
 
 <h3 id="installation"><font style="color:rgb(31, 35, 40);">Nmap</font></h3>
 
-![image](https://github.com/user-attachments/assets/debe9c93-4fed-4eac-9f29-0592ab7d0355)
+![image](https://github.com/user-attachments/assets/debe9c93-4fed-4eac-9f29-0592ab7d0355 =500x)
 
 <h4 id="installation"><font style="color:rgb(31, 35, 40);">Nmap Usage</font></h4>
 
