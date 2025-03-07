@@ -22,6 +22,8 @@ var (
 	domainReg = regexp.MustCompile(domainRegex)
 )
 
+
+//分离IP与域名
 func ParseIP(Target []string) ([]string, []string, error) {
 	var (
 		ipSet     = make(map[string]struct{})
