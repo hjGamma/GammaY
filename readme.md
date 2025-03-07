@@ -27,7 +27,9 @@
 ![image](https://github.com/user-attachments/assets/debe9c93-4fed-4eac-9f29-0592ab7d0355)
 
 <h4 id="installation"><font style="color:rgb(31, 35, 40);">Nmap Usage</font></h4>
-![image](https://github.com/user-attachments/assets/1915b642-c21c-493a-8d65-431be65fb949)
+
+![image](https://github.com/user-attachments/assets/18f2f01b-048c-4221-bdd5-98b3c1e88b30)
+
 
 ![image](https://github.com/user-attachments/assets/40b2bfe2-c0ee-40a9-98c7-d8a612510305)
 
