@@ -1,5 +1,10 @@
 # GammaY——Web Application Scanner.
-
+ ██████╗    █████╗    ███╗   ███╗   ███╗   ███╗    █████╗   ██╗   ██╗
+██╔════╝   ██╔══██╗   ████╗ ████╗   ████╗ ████╗   ██╔══██╗  ╚██╗ ██╔╝
+██║  ███╗  ███████║   ██╔████╔██╗   ██╔████╔██╗   ███████║   ╚████╔╝ 
+██║   ██║  ██╔══██║   ██║╚██╔╝██╗   ██║╚██╔╝██╗   ██╔══██║    ╚██╔╝  
+╚██████╔╝  ██║  ██║   ██║ ╚═╝ ██║   ██║ ╚═╝ ██║   ██║  ██║     ██║   
+ ╚═════╝   ╚═╝  ╚═╝   ╚═╝     ╚═╝   ╚═╝     ╚═╝   ╚═╝  ╚═╝     ╚═╝   
 GammaY is a Go-based web application scanner. It integrates the advantages of flexibility, scalability, and comprehensiveness.
 
 ## Installation
