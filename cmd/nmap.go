@@ -1,16 +1,22 @@
 package cmd
 
+//待添加功能
+// 1.域名转换IP进行端口指纹探测以及bypassCDN
+// 2.C段探测，根据提交的掩码进行C段探测
 import (
-
-	"time"
 	"gammay/core/DP"
+	"gammay/core/nmap"
 	"gammay/core/task"
 	"gammay/utils/logger"
+
+	"time"
+
 	"github.com/spf13/cobra"
 )
 
 var nmapCmd = &cobra.Command{
-	Use: "nmap",
+	Use:   "nmap",
+	Short: "IP fingerprinting and subdomain detection",
 	Long: `
  ██████╗     █████╗     ███╗   ███╗    ███╗   ███╗     █████╗     ██╗   ██╗
 ██╔════╝    ██╔══██╗    ████╗ ████╗    ████╗ ████╗    ██╔══██╗    ╚██╗ ██╔╝
@@ -20,26 +26,53 @@ var nmapCmd = &cobra.Command{
  ╚═════╝    ╚═╝  ╚═╝    ╚═╝     ╚═╝    ╚═╝     ╚═╝    ╚═╝  ╚═╝       ╚═╝   
 `,
 	Run: func(cmd *cobra.Command, args []string) {
-		start:=time.Now()
-		logger.Info(logger.Global.Color().Yellow("Start running nmap scan task"))
-		
-		tp.Scan.Wait()
-		logger.Info(logger.Global.Color().Yellow("The task has ended, taking - " + time.Since(start).String()))
-		
+		Tp.Scan, _ = task.NewTaskPool(Tp.Params.Thread, Tp.Params.Timeout)
+		if Fingerprint == true {
+			start := time.Now()
+			logger.Info(logger.Global.Color().Green("Start running nmap scan task"))
+			nmap.Nmapinit(Tp)
+			Nconfig := NmapNew()
+
+			Tp.Scan.Submit(nmap.Start(Tp, Nconfig))
+			Tp.Scan.Wait()
+			logger.Info(logger.Global.Color().Magenta("The nmap scan task has ended, taking - " + time.Since(start).String()))
+		}
+		if Subdomaindetect == true {
+			start := time.Now()
+			logger.Info(logger.Global.Color().Green("Start running subdomain enumeration scan task"))
+
+			Tp.Scan.Submit(nmap.Subdomaindetect(nmap.SubdomainInit(Tp)))
+			Tp.Scan.Wait()
+			logger.Info(logger.Global.Color().Magenta("The subdomain enumeration scan task has ended, taking - " + time.Since(start).String()))
+
+		}
+
 	},
 }
 var (
-	Ping bool
-	TCP  bool
-	ICMP bool
-	UDP  bool
+	Fingerprint        bool
+	MaxEnumerationTime int
+	Subdomaindetect    bool
+	CDN                bool
+	ping               bool
 )
 
 func init() {
 	rootCmd.AddCommand(nmapCmd)
-	nmapCmd.Flags().BoolVarP(&Ping, "Ping", "P", false, "对目标IP进行PING扫描")
-	nmapCmd.Flags().BoolVarP(&TCP, "TCP", "T", false, "对目标IP进行TCP扫描")
-	nmapCmd.Flags().BoolVarP(&ICMP, "ICMP", "I", false, "对目标IP进行ICMP扫描")
-	nmapCmd.Flags().BoolVarP(&UDP, "UDP", "U", false, "对目标IP进行UDP扫描")
+	nmapCmd.Flags().BoolVarP(&Fingerprint, "fp", "", false, "是否进行端口指纹探测")
+	nmapCmd.Flags().BoolVarP(&CDN, "CDN", "", false, "对目标IP进行CDN扫描")
+	nmapCmd.Flags().BoolVarP(&ping, "ping", "", false, "ping探测存活主机")
+	nmapCmd.Flags().BoolVarP(&Subdomaindetect, "dd", "", false, "是否进行子域名探测")
+	nmapCmd.Flags().IntVarP(&MaxEnumerationTime, "METime", "", 10, "设置最大枚举时间")
 
+}
+
+func NmapNew() *DP.NmapConfig {
+	return &DP.NmapConfig{
+		Fingerprint:        Fingerprint,
+		MaxEnumerationTime: MaxEnumerationTime,
+		Subdomaindetect:    Subdomaindetect,
+		CDN:                CDN,
+		Ping:               ping,
+	}
 }
