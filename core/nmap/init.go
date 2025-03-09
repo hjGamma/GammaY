@@ -2,6 +2,7 @@ package nmap
 
 import (
 	"fmt"
+	"gammay/core/DP"
 	"gammay/core/task"
 	"gammay/utils"
 	"gammay/utils/aliveCheck"
@@ -23,7 +24,7 @@ func Nmapinit(Tp *task.TaskPool) {
 	}
 }
 
-func Start(Tp *task.TaskPool) func() {
+func Start(Tp *task.TaskPool, Nconfig *DP.NmapConfig) func() {
 
 	return func() {
 
@@ -35,7 +36,7 @@ func Start(Tp *task.TaskPool) func() {
 			go func(ip string) {
 				defer ipWg.Done() // 确保每个 Goroutine 完成后减少计数器
 
-				if aliveCheck.HostAliveCheck(ip, false, Tp.Params.Timeout, false) {
+				if aliveCheck.HostAliveCheck(ip, Nconfig.Ping, Tp.Params.Timeout, false) {
 					// 增加 WaitGroup 计数器以跟踪端口扫描任务
 
 					var portWg sync.WaitGroup

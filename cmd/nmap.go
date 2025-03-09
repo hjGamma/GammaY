@@ -41,7 +41,7 @@ var nmapCmd = &cobra.Command{
 			start := time.Now()
 			logger.Info(logger.Global.Color().Green("Start running subdomain enumeration scan task"))
 
-			Tp.Scan.Submit(nmap.Subdomaindetect(nmap.SubdomainInit(Tp)))
+			Tp.Scan.Submit(nmap.Subdomaindetect(nmap.SubdomainInit(Tp),MaxEnumerationTime))
 			Tp.Scan.Wait()
 			logger.Info(logger.Global.Color().Magenta("The subdomain enumeration scan task has ended, taking - " + time.Since(start).String()))
 

@@ -5,10 +5,19 @@ import (
 )
 
 type ScanParams struct {
-	IP, Domain []string
-	Port, Mode string        //要检查的IP、端口以及黑名单
-	Timeout    time.Duration //网络超时
-	Thread     int           //线程数
+	IP, Domain      []string
+	Port            []int
+	Mode, BlackPort string        //要检查的IP、端口以及黑名单
+	Timeout         time.Duration //网络超时
+	Thread          int           //线程数
+}
+
+type NmapConfig struct {
+	MaxEnumerationTime int
+	Subdomaindetect   bool
+	CDN     bool
+	Ping    bool
+	Fingerprint bool
 }
 
 type vulnerability struct {
@@ -17,8 +26,4 @@ type vulnerability struct {
 
 type subdomain struct {
 	Domain string
-}
-
-type fingerprint struct {
-	IP, Port, Banner string
 }
