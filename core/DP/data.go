@@ -18,7 +18,22 @@ type NmapConfig struct {
 	CDN     bool
 	Ping    bool
 	Fingerprint bool
+	LayerExploit bool
 }
+
+// 扫描器配置
+type ScannerConfig struct {
+	MaxDepth      int
+	Timeout       time.Duration
+	UserAgents    []string
+	Threads       int
+	MatchStatus   []int
+	Retries       int
+	RandomDelay   time.Duration
+	MaxQueueSize  int
+	BackupPattern []string
+}
+
 
 type vulnerability struct {
 	IP, Port, VulnName, VulnType, VulnUrl, VulnPayload, VulnDetail string

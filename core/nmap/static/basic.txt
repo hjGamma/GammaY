@@ -1,0 +1,8 @@
+admin
+e
+wp-admin
+backup
+api
+config
+home
+

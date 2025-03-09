@@ -6,6 +6,7 @@ import (
 	"gammay/core/task"
 	"gammay/utils/logger"
 	"io"
+	"sync"
 
 	"github.com/projectdiscovery/subfinder/v2/pkg/runner"
 )
@@ -25,24 +26,34 @@ func SubdomainInit(Tp *task.TaskPool, MaxEnumerationTime int) *runner.Options {
 	return subfinderOpts
 }
 
-func Subdomaindetect(subfinderOpts *runner.Options) func() {
+func Subdomaindetect(subfinderOpts *runner.Options, Domains []string) func() {
 	return func() {
 		subfinder, err := runner.NewRunner(subfinderOpts)
 		if err != nil {
 			logger.Fatal(logger.Global.Color().Red("failed to create subfinder runner: %v", err.Error()))
 		}
-		output := &bytes.Buffer{}
-		var sourceMap map[string]map[string]struct{}
-		if sourceMap, err = subfinder.EnumerateSingleDomainWithCtx(context.Background(), Tp.Params.Domain[0], []io.Writer{output}); err != nil {
-			logger.Fatalf("failed to enumerate single domain: %v", err)
+		var dmwg sync.WaitGroup
+		dmwg.Add(len(Domains))
+
+		for _, domain := range Domains {
+			go func(domain string) {
+				defer dmwg.Done() // 确保在 goroutine 完成时调用 Done()
+				output := &bytes.Buffer{}
+				sourceMap, err := subfinder.EnumerateSingleDomainWithCtx(context.Background(), domain, []io.Writer{output})
+				if err != nil {
+					logger.Fatalf("failed to enumerate single domain: %v", err)
+				}
+				logger.Info(output.String())
+				for subdomain, sources := range sourceMap {
+					sourcesList := make([]string, 0, len(sources))
+					for source := range sources {
+						sourcesList = append(sourcesList, source)
+					}
+					logger.Printf("%s %s (%d)\n", subdomain, sourcesList, len(sources))
+				}
+			}(domain)
 		}
-		logger.Info(output.String())
-		for subdomain, sources := range sourceMap {
-			sourcesList := make([]string, 0, len(sources))
-			for source := range sources {
-				sourcesList = append(sourcesList, source)
-			}
-			logger.Printf("%s %s (%d)\n", subdomain, sourcesList, len(sources))
-		}
+
+		dmwg.Wait() // 等待所有 goroutine 完成
 	}
 }

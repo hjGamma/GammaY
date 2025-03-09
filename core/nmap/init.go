@@ -101,13 +101,13 @@ func PortScan(Tp *task.TaskPool, i any) {
 	//格式化输出指纹数据
 	appString := ""
 	for _, item := range tcpFinger.WebApp.App {
-		appString += logger.Global.Color().Green(" [") + logger.Global.Color().Cyan(item) + logger.Global.Color().Green("]")
+		appString += logger.Global.Color().Green(" [") + logger.Global.Color().CyanBg(item) + logger.Global.Color().Green("]")
 	}
 	if appString == "" {
 		appString = " "
 	}
 
-	wsMsg := logger.Global.Color().Green(fmt.Sprintf("%-"+strconv.Itoa(20)+"s", tcpFinger.Uri)) + "	" + "[" + logger.Global.Color().Yellow(tcpFinger.Service) + "]" + "\t" + appString
+	wsMsg := logger.Global.Color().GreenBg(fmt.Sprintf("%-"+strconv.Itoa(20)+"s", tcpFinger.Uri)) + "	" + "[" + logger.Global.Color().YellowBg(tcpFinger.Service) + "]" + "\t" + appString
 
 	conMsg := net.JoinHostPort(host, port) + "\t" + tcpFinger.Service
 	if tcpFinger.WebApp.App != nil {

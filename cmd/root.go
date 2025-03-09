@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/yqcs/fingerscan"
 
 	"gammay/core/DP"
 	"gammay/core/task"
@@ -22,8 +23,9 @@ var rootCmd = &cobra.Command{
 ██║  ███╗  ███████║   ██╔████╔██╗   ██╔████╔██╗   ███████║   ╚████╔╝ 
 ██║   ██║  ██╔══██║   ██║╚██╔╝██╗   ██║╚██╔╝██╗   ██╔══██║    ╚██╔╝  
 ╚██████╔╝  ██║  ██║   ██║ ╚═╝ ██║   ██║ ╚═╝ ██║   ██║  ██║     ██║   
- ╚═════╝   ╚═╝  ╚═╝   ╚═╝     ╚═╝   ╚═╝     ╚═╝   ╚═╝  ╚═╝     ╚═╝   `,
+ ╚═════╝   ╚═╝  ╚═╝   ╚═╝     ╚═╝   ╚═╝     ╚═╝   ╚═╝  ╚═╝     ╚═╝         `,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+
 		fmt.Println(cmd.Long)
 		hosts, domain, err := parse.ParseIP(TargetIP)
 		var params DP.ScanParams
@@ -34,33 +36,33 @@ var rootCmd = &cobra.Command{
 			IP:     hosts,
 			Domain: domain,
 			Port:   Port,
-			Mode:   mode,
+			Mode:   Mode,
 		}
-
-		if mode == "s" {
+		//控制协程数量
+		if Mode == "s" {
 			params.Thread = 800
 			params.Timeout = 20 * time.Second
 		}
 
-		if mode == "d" {
+		if Mode == "d" {
 			params.Thread = 1500
 			params.Timeout = 15 * time.Second
 		}
 
-		if mode == "f" {
+		if Mode == "f" {
 			params.Thread = 2500
 			params.Timeout = 15 * time.Second
 		}
-		p,err:=task.NewTaskPool(params.Thread, params.Timeout)
-		if err!=nil {
+		p, err := task.NewTaskPool(params.Thread, params.Timeout)
+		if err != nil {
 			logger.Fatal(err)
 		}
-		tp=&task.TaskPool{
+		Tp = &task.TaskPool{
 			Scan:   p,
 			Params: params,
 		}
-		defer tp.Scan.Release()
 
+		defer Tp.Scan.Release()
 
 	},
 	Run: func(cmd *cobra.Command, args []string) {
@@ -69,17 +71,19 @@ var rootCmd = &cobra.Command{
 }
 
 var (
-	TargetIP []string
-	Port     string
-	mode     string
+	TargetIP        []string
+	Port            []int
+	Mode, BlackPort string
 
-	tp       *task.TaskPool
+	Tp *task.TaskPool
 )
 
 func init() {
+	fingerscan.InitFinger()
 	rootCmd.PersistentFlags().StringSliceVarP(&TargetIP, "ip", "t", TargetIP, "Target ip")
-	rootCmd.Flags().StringVarP(&Port, "port", "p", "80", "Target port")
-	rootCmd.Flags().StringVarP(&mode, "mode", "m", "s", "mode")
+	rootCmd.PersistentFlags().IntSliceVarP(&Port, "port", "p", Port, "Target port")
+	rootCmd.PersistentFlags().StringVarP(&BlackPort, "BlackPort", "", "", "Setting up a port to disable access")
+	rootCmd.PersistentFlags().StringVarP(&Mode, "mode", "m", "s", "Setting the thread size ")
 	rootCmd.MarkFlagRequired("TargetIP")
 
 	rootCmd.Run = func(cmd *cobra.Command, args []string) {
