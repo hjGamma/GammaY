@@ -7,10 +7,8 @@
 ## <font style="color:rgb(31, 35, 40);">Installation</font>
 <font style="color:rgb(31, 35, 40);">If you have a Go environment, make sure you have Go >= 1.20 with Go Modules enable and run the following command.</font>
 
-:::tips
 <font style="color:rgb(31, 35, 40);">go install github.com/hjGamma/GammaY@latest</font>
 
-:::
 
 <font style="color:rgb(31, 35, 40);">Please visit the Official Documention for more details.</font>
 
