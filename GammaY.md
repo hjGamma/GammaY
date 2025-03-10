@@ -38,7 +38,7 @@
 
 1. FingerPrinting
 
-![画板](https://cdn.nlark.com/yuque/0/2025/jpeg/281716/1741334910271-2f772321-a957-4273-8e2c-a28e59405f31.jpeg)
+<img src="https://github.com/user-attachments/assets/debe9c93-4fed-4eac-9f29-0592ab7d0355" width="600" />
 
 ![](https://cdn.nlark.com/yuque/0/2025/png/281716/1741572706316-11edefbc-cb66-4dd3-bc80-ab80fd872ed7.png)
 
