@@ -1,0 +1,68 @@
+syntax = "proto3";
+package proto;
+option go_package = "DID/proto";
+
+// --------------------
+// 匹配服务：MatchService
+// --------------------
+service MatchService {
+  // 客户端调用本方法注册到匹配服务器，并阻塞直到找到配对
+  rpc Register(RegisterRequest) returns (MatchResponse);
+
+  // 客户端将自己的计算结果发回服务器，服务器处理后返回
+  rpc SubmitResult(ResultRequest) returns (ResultResponse);
+
+  //客户端生成自己的公私钥后对返回的merkle root进行签名，然后返回给server进行汇总
+  rpc SignMessage(SignRequest) returns (SignResponse);
+}
+
+message RegisterRequest {
+  // 客户端自身的 Chat 服务地址（host:port），供对端连接
+  string address = 1;
+}
+
+message MatchResponse {
+  // 匹配到的对端客户端地址
+  string peer_address = 1;
+  // 为对端分配的序号，用于计算结果提交时标识自己
+  int32 peer_sequence = 2;
+}
+
+// --------------------
+// 结果提交与返回
+// --------------------
+message ResultRequest {
+  // 自己在配对时得到的序号
+  int32 sequence = 1;
+  // 客户端本地计算出的结果（可根据实际类型调整）
+  bytes result_data = 2;
+}
+
+message ResultResponse {
+  // 服务器处理后的结果
+  bytes processed_data = 1;
+}
+// --------------------
+// 消息签名
+// --------------------
+message SignRequest{
+  bytes signed_message =1;
+  bytes public_key=2;
+}
+
+message SignResponse{
+  bytes aggr_result=1;
+  bytes merkle_root=2;
+}
+// --------------------
+// 点对点聊天服务：ChatService
+// --------------------
+service ChatService {
+  // 双向流通信，客户端与对端 Peer 建立连接后都使用本方法进行消息收发
+  rpc Chat(stream Message) returns (stream Message);
+}
+
+message Message { 
+  int32 sequence = 1;
+  bytes client_data = 2;
+}
