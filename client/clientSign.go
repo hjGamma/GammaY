@@ -1,9 +1,9 @@
 package main
 
 import (
+	"math/big"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
-	"math/big"
 )
 
 // 多方BLS签名生成与聚合

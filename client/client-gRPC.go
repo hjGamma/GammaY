@@ -221,7 +221,7 @@ func main() {
 			log.Println("[Client] Merkle Root:", &resElm)
 			//对merkle root进行签名
 			signedMessage := SignMessage(signer, MRoot.ProcessedData)
-			aggrResult, err := matchClient.SignMessage(resCtx, &pb.SignRequest{
+			_, err = matchClient.SignMessage(resCtx, &pb.SignRequest{
 				SignedMessage: signedMessage.Marshal(),
 				PublicKey:     pk.Marshal(),
 			})
@@ -229,14 +229,7 @@ func main() {
 				log.Printf("[Client] SignMessage 出错: %v", err)
 				return
 			}
-			var aggrElm fr.Element
-			aggrElm.SetBytes(aggrResult.AggrResult)
-			log.Printf("聚合签名: %x\n", aggrResult.AggrResult)
-			log.Println("[Client] 聚合签名:", &aggrElm)
-			log.Printf("Merkle Root: %x\n", aggrResult.MerkleRoot)
-			var merkleRootElm fr.Element
-			merkleRootElm.SetBytes(aggrResult.MerkleRoot)
-			log.Println("[Client] Merkle Root:", &merkleRootElm)
+
 			return
 		}
 	}()

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"log"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 )
@@ -366,9 +367,9 @@ func combineSums(a, b *subTree) {
 
 	// 更新 sum（只保留 32 字节结果）
 	a.sum = frToBytes32(sumA)
-	fmt.Println("还原hash:", new(fr.Element).SetBytes(a.sum))
+	log.Println("还原hash:", new(fr.Element).SetBytes(a.sum))
 	b.sum = frToBytes32(sumB)
-	fmt.Println("还原hash:", new(fr.Element).SetBytes(b.sum))
+	log.Println("还原hash:", new(fr.Element).SetBytes(b.sum))
 }
 
 func (t *Tree) BuildProof(index uint64) ([][]byte, []byte, error) {

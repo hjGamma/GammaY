@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	_ "math/big"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
 )
@@ -321,4 +322,42 @@ func (t *Tree) joinAllSubTrees1() {
 		}
 		t.head = joinSubTrees1(t.hash, t.head.next, t.head)
 	}
+}
+
+func (t *Tree) ProveDebug() (merkleRoot []byte, proofSet [][]byte, proofIndex uint64, numLeaves uint64) {
+	if !t.proofTree {
+		panic("wrong usage: can't call prove on a tree if SetIndex wasn't called")
+	}
+
+	if t.head == nil || len(t.proofSet) == 0 {
+		return t.Root(), nil, t.proofIndex, t.currentIndex
+	}
+	proofSet = t.proofSet
+
+	current := t.head
+	for current.next != nil && current.next.height < len(proofSet)-1 {
+		// 在 join 前打印
+		fmt.Printf("[JOIN] left=%x  right=%x  (height=%d+%d)\n",
+			current.next.sum, current.sum,
+			current.next.height, current.height,
+		)
+		current = joinSubTrees1(t.hash, current.next, current)
+		fmt.Printf("  => hash=%x\n", current.sum)
+	}
+
+	if current.next != nil && current.next.height == len(proofSet)-1 {
+		fmt.Printf("[APPEND RIGHT SIBLING] %x\n", current.sum)
+		proofSet = append(proofSet, current.sum)
+		current = current.next
+	}
+
+	current = current.next
+	for current != nil {
+		fmt.Printf("[APPEND LEFT SIBLING] %x\n", current.sum)
+		proofSet = append(proofSet, current.sum)
+		current = current.next
+	}
+
+	fmt.Printf("[ROOT] %x\n", t.Root())
+	return t.Root(), proofSet, t.proofIndex, t.currentIndex
 }
