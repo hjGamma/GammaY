@@ -2,56 +2,123 @@ syntax = "proto3";
 package proto;
 option go_package = "DID/proto";
 
+// ============================================================
+// DID 新架构: Pedersen 承诺 + MPC 重随机化 + ORP 不经意置换
+// ============================================================
+
+// DIDService 是新架构的核心服务
+// 服务器生成属性与 Pedersen 承诺, 计算分片发送到 MPC 节点
+// 客户端基于 g 计算新参数, 分片发送到 MPC 节点
+// MPC 节点执行重随机化与不经意置换
+service DIDService {
+  // 服务器端: 提交属性承诺与 MPC 分片
+  rpc SubmitCommitment(CommitmentRequest) returns (CommitmentResponse);
+
+  // 客户端: 接收生成元 g, 提交客户端参数分片
+  rpc SubmitClientParams(ClientParamsRequest) returns (ClientParamsResponse);
+
+  // 用户: 提交属性置换顺序 (用于 ORP)
+  rpc SubmitPermutation(PermutationRequest) returns (PermutationResponse);
+
+  // 获取最终 Merkle Root
+  rpc GetMerkleRoot(MerkleRootRequest) returns (MerkleRootResponse);
+}
+
+// ============================================================
+// 消息定义
+// ============================================================
+
+// CommitmentRequest - 服务器提交属性承诺与分片
+message CommitmentRequest {
+  int32 server_id = 1;             // 服务器 ID
+  bytes commitment = 2;           // Pedersen 承诺 C = m*G + r*H (序列化)
+  repeated bytes rerandom_shards = 3; // 重随机化分片 r'_i (每个分片对应一个 MPC 节点)
+  bytes generator_g = 4;           // 生成元 G (发送给客户端)
+  int32 attribute_id = 5;          // 属性 ID
+}
+
+// CommitmentResponse - 服务器提交响应
+message CommitmentResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// ClientParamsRequest - 客户端参数分片
+message ClientParamsRequest {
+  repeated bytes client_shards = 1; // 客户端参数分片 (每个分片对应一个 MPC 节点)
+  int32 client_id = 2;
+}
+
+// ClientParamsResponse - 客户端提交响应
+message ClientParamsResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// PermutationRequest - 用户提交置换顺序
+message PermutationRequest {
+  repeated int32 permutation = 1; // 置换数组 π
+  int32 user_id = 2;
+}
+
+// PermutationResponse - 置换响应 (包含置换后的承诺)
+message PermutationResponse {
+  repeated bytes permuted_commitments = 1; // 置换后的重随机化承诺
+  bool success = 2;
+  string message = 3;
+}
+
+// MerkleRootRequest - 请求 Merkle Root
+message MerkleRootRequest {}
+
+// MerkleRootResponse - Merkle Root 响应
+message MerkleRootResponse {
+  bytes merkle_root = 1;
+  int32 num_leaves = 2;
+  repeated bytes leaf_hashes = 3; // 叶子哈希 (用于 proof 生成)
+  bool success = 4;
+}
+
+// ============================================================
+// 兼容: 原有 MatchService 和 ChatService (保留供旧流程使用)
+// ============================================================
 
 service MatchService {
   rpc Register(RegisterRequest) returns (MatchResponse);
-
   rpc SubmitResult(ResultRequest) returns (ResultResponse);
-
   rpc SignMessage(SignRequest) returns (SignResponse);
 }
 
 message RegisterRequest {
-
   string address = 1;
 }
 
 message MatchResponse {
-
   string peer_address = 1;
-
   int32 peer_sequence = 2;
 }
 
-
-// 结果提交与返回
-
 message ResultRequest {
-  // 自己在配对时得到的序号
   int32 sequence = 1;
-  // 客户端本地计算出的结果（可根据实际类型调整）
   bytes result_data = 2;
 }
 
 message ResultResponse {
-  // 服务器处理后的结果
   bytes processed_data = 1;
 }
 
-// 消息签名
-message SignRequest{
-  bytes signed_message =1;
-  bytes public_key=2;
+message SignRequest {
+  bytes signed_message = 1;
+  bytes public_key = 2;
 }
 
-message SignResponse{
-  bytes aggr_result=1;
-  bytes merkle_root=2;
+message SignResponse {
+  bytes aggr_result = 1;
+  bytes merkle_root = 2;
 }
 
 // 点对点：ChatService
 service ChatService {
-  // 双向流通信
   rpc Chat(stream Message) returns (stream Message);
 }
 
