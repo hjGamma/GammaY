@@ -140,7 +140,7 @@ func (t *Tree) joinSubTrees(h hash.Hash, a, b *subTree) *subTree {
 func New(h hash.Hash) *Tree {
 	return &Tree{
 		hash:       h,
-		cachedTree: true,
+		cachedTree: false,
 	}
 }
 

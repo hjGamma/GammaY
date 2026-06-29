@@ -1,0 +1,16 @@
+{
+  "leaf_index": 0,
+  "leaf_data": "BXpSRoEN1ZnAOIQR6hNHhX6PiSoSEgWbL+tb/DvGSLLYVSUTQq4h3xvtfH0YbiwaDh1uPCd2NkZA5qD5TYC1NjejZ1am5iHcCRz84opiQqw7baQ2c5rXZA2WuI3Cn4Xr",
+  "leaf_hash": "gN9cgdxHuRjlfJUlHS+VSPam0Dbt7cCyUSrRY03RjwY=",
+  "proof_path": [
+    "8JXFxdlE5BYH8N26osObIY+FTV0Xd9orJChSs9bSVHY=",
+    "9hVy/psVIILF0OwCNW0Zu+dc8LKNIlsNrJsWcIL5aPQ="
+  ],
+  "proof_order": [
+    true,
+    true
+  ],
+  "merkle_root": "BsZ+3CPhnD94vhMmMBTiYUgKsQVDBAU3ozfnhc14bpQ=",
+  "num_leaves": 4,
+  "verified": true
+}

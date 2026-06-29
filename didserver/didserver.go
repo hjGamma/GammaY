@@ -14,7 +14,6 @@ import (
 	"DID/utils"
 	bls12381 "github.com/consensys/gnark-crypto/ecc/bls12-381"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
@@ -211,27 +210,23 @@ func (s *DIDServer) SubmitPermutation(ctx context.Context, req *pb.PermutationRe
 	}, nil
 }
 
-// buildMerkleTree 构建单节点 Merkle 树
+// buildMerkleTree 构建单节点 Merkle 树 (使用 SimpleMerkleTree)
 func (s *DIDServer) buildMerkleTree() {
 	log.Printf("[DIDServer] 开始构建 Merkle 树...")
 
-	h := mimc.NewMiMC()
-	tree := utils.New(h)
+	tree := utils.NewSimpleMerkleTree()
 
 	for _, commitmentBytes := range s.permutedCommitments {
 		tree.Push(commitmentBytes)
 	}
 
-	s.merkleRoot = tree.Root()
-	s.numLeaves = len(s.permutedCommitments)
-
-	// 收集叶子哈希 (用于 proof 生成)
-	s.leafHashes = make([][]byte, s.numLeaves)
-	for i, commitmentBytes := range s.permutedCommitments {
-		h.Reset()
-		h.Write(commitmentBytes)
-		s.leafHashes[i] = h.Sum(nil)
+	if err := tree.Build(); err != nil {
+		log.Fatalf("[DIDServer] 构建 Merkle 树失败: %v", err)
 	}
+
+	s.merkleRoot = tree.Root()
+	s.numLeaves = tree.NumLeaves()
+	s.leafHashes = tree.LeafHashes()
 
 	log.Printf("[DIDServer] Merkle 树构建完成")
 	log.Printf("[DIDServer] Merkle Root: %x", s.merkleRoot)

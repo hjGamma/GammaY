@@ -1,0 +1,16 @@
+{
+  "merkle_root": "BsZ+3CPhnD94vhMmMBTiYUgKsQVDBAU3ozfnhc14bpQ=",
+  "num_leaves": 4,
+  "leaf_hashes": [
+    "gN9cgdxHuRjlfJUlHS+VSPam0Dbt7cCyUSrRY03RjwY=",
+    "8JXFxdlE5BYH8N26osObIY+FTV0Xd9orJChSs9bSVHY=",
+    "xBCJsoDbNVYbWb+n6+A0g6MoAbXjT0RAO53p+svz4Us=",
+    "KpiXCaP5gTYB4Ic4JDkRef9B4cfoXxR3gsMzfxyVEF0="
+  ],
+  "leaf_data": [
+    "BXpSRoEN1ZnAOIQR6hNHhX6PiSoSEgWbL+tb/DvGSLLYVSUTQq4h3xvtfH0YbiwaDh1uPCd2NkZA5qD5TYC1NjejZ1am5iHcCRz84opiQqw7baQ2c5rXZA2WuI3Cn4Xr",
+    "DJm7YodxJcdjjNLqzsq+MtICyGCBVDb7wbjqWVnveJG4lSlRM/o6651hxyTNHTV3BaB91RiaylnCXeczHETJ0lovYDsYhJ0/4hKdiz1sAGwmZvFC68aDeY/LXkGSwDMp",
+    "DQcEm4fq6sQ5aYL4WuLTgXQx7Nd5ykK2NXLfJZkDzwa84/mTVD9OICoh8wtUMCPHD+PbVBy5oVTsWxs1Lz8YfB4v/lM0Q0AFq7Ia23e4LGdgXMc6jjYiTMHpiI6jsJzx",
+    "DOqjD4LGQ0wGuAmbTff2JS6sarQV05AWj9jNqK+ErIr1sAukf47JpA2lx+J9ijdPEB4eaMJ97HrZQpu2EDvcW89LipUFzV/hi1HjND+vYiS7F6iDnvhBROHY27M/L38e"
+  ]
+}

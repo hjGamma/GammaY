@@ -237,7 +237,7 @@ func RunDIDClient(didServerAddr string, numAttributes int) {
 	permInts := perm.Get()
 	log.Printf("[DIDClient] 提交置换顺序: %v", permInts)
 
-	_, err := client.SubmitPermutation(didServerAddr, permInts)
+	permResp, err := client.SubmitPermutation(didServerAddr, permInts)
 	if err != nil {
 		log.Fatalf("[DIDClient] 提交置换失败: %v", err)
 	}
@@ -250,28 +250,30 @@ func RunDIDClient(didServerAddr string, numAttributes int) {
 
 	if rootResp.Success {
 		log.Printf("[DIDClient] 最终 Merkle Root: %x", rootResp.MerkleRoot)
-		// 保存叶子哈希供 proof 生成器使用
-		saveLeafHashes(rootResp)
+		// 保存叶子数据 + 叶子哈希 + root 供 proof 生成器使用
+		saveAggregatorOutput(rootResp, permResp.PermutedCommitments)
 	}
 }
 
-// saveLeafHashes 保存叶子哈希到文件 (供 proof 生成器使用)
-func saveLeafHashes(resp *pb.MerkleRootResponse) {
+// saveAggregatorOutput 保存聚合节点输出 (叶子数据 + 哈希 + root) 供 proof 生成器使用
+func saveAggregatorOutput(resp *pb.MerkleRootResponse, leafData [][]byte) {
 	output := struct {
 		MerkleRoot []byte   `json:"merkle_root"`
-		LeafHashes [][]byte `json:"leaf_hashes"`
 		NumLeaves  int      `json:"num_leaves"`
+		LeafHashes [][]byte `json:"leaf_hashes"`
+		LeafData   [][]byte `json:"leaf_data"`
 	}{
 		MerkleRoot: resp.MerkleRoot,
-		LeafHashes: resp.LeafHashes,
 		NumLeaves:  int(resp.NumLeaves),
+		LeafHashes: resp.LeafHashes,
+		LeafData:   leafData,
 	}
 
 	jsonData, _ := json.MarshalIndent(output, "", "  ")
 	if err := os.WriteFile("aggregator_output.json", jsonData, 0644); err != nil {
-		log.Printf("[DIDClient] 保存叶子哈希失败: %v", err)
+		log.Printf("[DIDClient] 保存输出失败: %v", err)
 	} else {
-		log.Printf("[DIDClient] 叶子哈希已保存到 aggregator_output.json")
+		log.Printf("[DIDClient] 聚合输出已保存到 aggregator_output.json (含 %d 个叶子数据)", len(leafData))
 	}
 }
 
