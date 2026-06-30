@@ -19,29 +19,35 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DIDService_SubmitCommitment_FullMethodName   = "/proto.DIDService/SubmitCommitment"
+	DIDService_SubmitCommitments_FullMethodName  = "/proto.DIDService/SubmitCommitments"
 	DIDService_SubmitClientParams_FullMethodName = "/proto.DIDService/SubmitClientParams"
 	DIDService_SubmitPermutation_FullMethodName  = "/proto.DIDService/SubmitPermutation"
 	DIDService_GetMerkleRoot_FullMethodName      = "/proto.DIDService/GetMerkleRoot"
+	DIDService_SubscribeGenerator_FullMethodName = "/proto.DIDService/SubscribeGenerator"
+	DIDService_WaitForStage_FullMethodName       = "/proto.DIDService/WaitForStage"
 )
 
 // DIDServiceClient is the client API for DIDService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// DIDService 是新架构的核心服务
+// DIDService 是新架构的核心协调服务
 // 服务器生成属性与 Pedersen 承诺, 计算分片发送到 MPC 节点
 // 客户端基于 g 计算新参数, 分片发送到 MPC 节点
 // MPC 节点执行重随机化与不经意置换
 type DIDServiceClient interface {
-	// 服务器端: 提交属性承诺与 MPC 分片
-	SubmitCommitment(ctx context.Context, in *CommitmentRequest, opts ...grpc.CallOption) (*CommitmentResponse, error)
+	// 服务器端: 流式批量提交属性承诺与 MPC 分片 (减少 N 次 TLS 握手开销)
+	SubmitCommitments(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[CommitmentRequest, CommitmentResponse], error)
 	// 客户端: 接收生成元 g, 提交客户端参数分片
 	SubmitClientParams(ctx context.Context, in *ClientParamsRequest, opts ...grpc.CallOption) (*ClientParamsResponse, error)
 	// 用户: 提交属性置换顺序 (用于 ORP)
 	SubmitPermutation(ctx context.Context, in *PermutationRequest, opts ...grpc.CallOption) (*PermutationResponse, error)
 	// 获取最终 Merkle Root
 	GetMerkleRoot(ctx context.Context, in *MerkleRootRequest, opts ...grpc.CallOption) (*MerkleRootResponse, error)
+	// 客户端订阅生成元 G (服务器推送 G 到客户端, 替代本地伪造)
+	SubscribeGenerator(ctx context.Context, in *GeneratorRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GeneratorResponse], error)
+	// 等待阶段完成 (阻塞等待直到指定阶段就绪, 替代 poll-and-fail)
+	WaitForStage(ctx context.Context, in *StageRequest, opts ...grpc.CallOption) (*StageResponse, error)
 }
 
 type dIDServiceClient struct {
@@ -52,15 +58,18 @@ func NewDIDServiceClient(cc grpc.ClientConnInterface) DIDServiceClient {
 	return &dIDServiceClient{cc}
 }
 
-func (c *dIDServiceClient) SubmitCommitment(ctx context.Context, in *CommitmentRequest, opts ...grpc.CallOption) (*CommitmentResponse, error) {
+func (c *dIDServiceClient) SubmitCommitments(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[CommitmentRequest, CommitmentResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CommitmentResponse)
-	err := c.cc.Invoke(ctx, DIDService_SubmitCommitment_FullMethodName, in, out, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &DIDService_ServiceDesc.Streams[0], DIDService_SubmitCommitments_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &grpc.GenericClientStream[CommitmentRequest, CommitmentResponse]{ClientStream: stream}
+	return x, nil
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DIDService_SubmitCommitmentsClient = grpc.ClientStreamingClient[CommitmentRequest, CommitmentResponse]
 
 func (c *dIDServiceClient) SubmitClientParams(ctx context.Context, in *ClientParamsRequest, opts ...grpc.CallOption) (*ClientParamsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -92,23 +101,56 @@ func (c *dIDServiceClient) GetMerkleRoot(ctx context.Context, in *MerkleRootRequ
 	return out, nil
 }
 
+func (c *dIDServiceClient) SubscribeGenerator(ctx context.Context, in *GeneratorRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GeneratorResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &DIDService_ServiceDesc.Streams[1], DIDService_SubscribeGenerator_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[GeneratorRequest, GeneratorResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DIDService_SubscribeGeneratorClient = grpc.ServerStreamingClient[GeneratorResponse]
+
+func (c *dIDServiceClient) WaitForStage(ctx context.Context, in *StageRequest, opts ...grpc.CallOption) (*StageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StageResponse)
+	err := c.cc.Invoke(ctx, DIDService_WaitForStage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DIDServiceServer is the server API for DIDService service.
 // All implementations must embed UnimplementedDIDServiceServer
 // for forward compatibility.
 //
-// DIDService 是新架构的核心服务
+// DIDService 是新架构的核心协调服务
 // 服务器生成属性与 Pedersen 承诺, 计算分片发送到 MPC 节点
 // 客户端基于 g 计算新参数, 分片发送到 MPC 节点
 // MPC 节点执行重随机化与不经意置换
 type DIDServiceServer interface {
-	// 服务器端: 提交属性承诺与 MPC 分片
-	SubmitCommitment(context.Context, *CommitmentRequest) (*CommitmentResponse, error)
+	// 服务器端: 流式批量提交属性承诺与 MPC 分片 (减少 N 次 TLS 握手开销)
+	SubmitCommitments(grpc.ClientStreamingServer[CommitmentRequest, CommitmentResponse]) error
 	// 客户端: 接收生成元 g, 提交客户端参数分片
 	SubmitClientParams(context.Context, *ClientParamsRequest) (*ClientParamsResponse, error)
 	// 用户: 提交属性置换顺序 (用于 ORP)
 	SubmitPermutation(context.Context, *PermutationRequest) (*PermutationResponse, error)
 	// 获取最终 Merkle Root
 	GetMerkleRoot(context.Context, *MerkleRootRequest) (*MerkleRootResponse, error)
+	// 客户端订阅生成元 G (服务器推送 G 到客户端, 替代本地伪造)
+	SubscribeGenerator(*GeneratorRequest, grpc.ServerStreamingServer[GeneratorResponse]) error
+	// 等待阶段完成 (阻塞等待直到指定阶段就绪, 替代 poll-and-fail)
+	WaitForStage(context.Context, *StageRequest) (*StageResponse, error)
 	mustEmbedUnimplementedDIDServiceServer()
 }
 
@@ -119,8 +161,8 @@ type DIDServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedDIDServiceServer struct{}
 
-func (UnimplementedDIDServiceServer) SubmitCommitment(context.Context, *CommitmentRequest) (*CommitmentResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method SubmitCommitment not implemented")
+func (UnimplementedDIDServiceServer) SubmitCommitments(grpc.ClientStreamingServer[CommitmentRequest, CommitmentResponse]) error {
+	return status.Error(codes.Unimplemented, "method SubmitCommitments not implemented")
 }
 func (UnimplementedDIDServiceServer) SubmitClientParams(context.Context, *ClientParamsRequest) (*ClientParamsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SubmitClientParams not implemented")
@@ -130,6 +172,12 @@ func (UnimplementedDIDServiceServer) SubmitPermutation(context.Context, *Permuta
 }
 func (UnimplementedDIDServiceServer) GetMerkleRoot(context.Context, *MerkleRootRequest) (*MerkleRootResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMerkleRoot not implemented")
+}
+func (UnimplementedDIDServiceServer) SubscribeGenerator(*GeneratorRequest, grpc.ServerStreamingServer[GeneratorResponse]) error {
+	return status.Error(codes.Unimplemented, "method SubscribeGenerator not implemented")
+}
+func (UnimplementedDIDServiceServer) WaitForStage(context.Context, *StageRequest) (*StageResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WaitForStage not implemented")
 }
 func (UnimplementedDIDServiceServer) mustEmbedUnimplementedDIDServiceServer() {}
 func (UnimplementedDIDServiceServer) testEmbeddedByValue()                    {}
@@ -152,23 +200,12 @@ func RegisterDIDServiceServer(s grpc.ServiceRegistrar, srv DIDServiceServer) {
 	s.RegisterService(&DIDService_ServiceDesc, srv)
 }
 
-func _DIDService_SubmitCommitment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CommitmentRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DIDServiceServer).SubmitCommitment(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DIDService_SubmitCommitment_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DIDServiceServer).SubmitCommitment(ctx, req.(*CommitmentRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+func _DIDService_SubmitCommitments_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(DIDServiceServer).SubmitCommitments(&grpc.GenericServerStream[CommitmentRequest, CommitmentResponse]{ServerStream: stream})
 }
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DIDService_SubmitCommitmentsServer = grpc.ClientStreamingServer[CommitmentRequest, CommitmentResponse]
 
 func _DIDService_SubmitClientParams_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ClientParamsRequest)
@@ -224,6 +261,35 @@ func _DIDService_GetMerkleRoot_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DIDService_SubscribeGenerator_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(GeneratorRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DIDServiceServer).SubscribeGenerator(m, &grpc.GenericServerStream[GeneratorRequest, GeneratorResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DIDService_SubscribeGeneratorServer = grpc.ServerStreamingServer[GeneratorResponse]
+
+func _DIDService_WaitForStage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DIDServiceServer).WaitForStage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DIDService_WaitForStage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DIDServiceServer).WaitForStage(ctx, req.(*StageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DIDService_ServiceDesc is the grpc.ServiceDesc for DIDService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -231,10 +297,6 @@ var DIDService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "proto.DIDService",
 	HandlerType: (*DIDServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
-		{
-			MethodName: "SubmitCommitment",
-			Handler:    _DIDService_SubmitCommitment_Handler,
-		},
 		{
 			MethodName: "SubmitClientParams",
 			Handler:    _DIDService_SubmitClientParams_Handler,
@@ -247,8 +309,289 @@ var DIDService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "GetMerkleRoot",
 			Handler:    _DIDService_GetMerkleRoot_Handler,
 		},
+		{
+			MethodName: "WaitForStage",
+			Handler:    _DIDService_WaitForStage_Handler,
+		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "SubmitCommitments",
+			Handler:       _DIDService_SubmitCommitments_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "SubscribeGenerator",
+			Handler:       _DIDService_SubscribeGenerator_Handler,
+			ServerStreams: true,
+		},
+	},
+	Metadata: "chat.proto",
+}
+
+const (
+	MPCNodeService_ReceiveShards_FullMethodName       = "/proto.MPCNodeService/ReceiveShards"
+	MPCNodeService_ReceiveClientShard_FullMethodName  = "/proto.MPCNodeService/ReceiveClientShard"
+	MPCNodeService_ComputeContribution_FullMethodName = "/proto.MPCNodeService/ComputeContribution"
+	MPCNodeService_PermuteShards_FullMethodName       = "/proto.MPCNodeService/PermuteShards"
+	MPCNodeService_HealthCheck_FullMethodName         = "/proto.MPCNodeService/HealthCheck"
+)
+
+// MPCNodeServiceClient is the client API for MPCNodeService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// MPCNodeService - MPC 节点服务 (基于消息队列模式)
+// 每个 MPC 节点作为独立 gRPC 服务, 接收分片并计算贡献
+// 协调节点通过此服务与各 MPC 节点通信, 实现真正的分布式 MPC
+type MPCNodeServiceClient interface {
+	// 接收服务器分片 (流式, 支持批量)
+	ReceiveShards(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ShardMessage, MPCResponse], error)
+	// 接收客户端分片
+	ReceiveClientShard(ctx context.Context, in *ClientShardMessage, opts ...grpc.CallOption) (*MPCResponse, error)
+	// 请求节点计算重随机化贡献
+	ComputeContribution(ctx context.Context, in *ComputeRequest, opts ...grpc.CallOption) (*ContributionResponse, error)
+	// 置换分片 (ORP 协作)
+	PermuteShards(ctx context.Context, in *PermuteRequest, opts ...grpc.CallOption) (*MPCResponse, error)
+	// 健康检查
+	HealthCheck(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthResponse, error)
+}
+
+type mPCNodeServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewMPCNodeServiceClient(cc grpc.ClientConnInterface) MPCNodeServiceClient {
+	return &mPCNodeServiceClient{cc}
+}
+
+func (c *mPCNodeServiceClient) ReceiveShards(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[ShardMessage, MPCResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &MPCNodeService_ServiceDesc.Streams[0], MPCNodeService_ReceiveShards_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[ShardMessage, MPCResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type MPCNodeService_ReceiveShardsClient = grpc.ClientStreamingClient[ShardMessage, MPCResponse]
+
+func (c *mPCNodeServiceClient) ReceiveClientShard(ctx context.Context, in *ClientShardMessage, opts ...grpc.CallOption) (*MPCResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MPCResponse)
+	err := c.cc.Invoke(ctx, MPCNodeService_ReceiveClientShard_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *mPCNodeServiceClient) ComputeContribution(ctx context.Context, in *ComputeRequest, opts ...grpc.CallOption) (*ContributionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ContributionResponse)
+	err := c.cc.Invoke(ctx, MPCNodeService_ComputeContribution_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *mPCNodeServiceClient) PermuteShards(ctx context.Context, in *PermuteRequest, opts ...grpc.CallOption) (*MPCResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MPCResponse)
+	err := c.cc.Invoke(ctx, MPCNodeService_PermuteShards_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *mPCNodeServiceClient) HealthCheck(ctx context.Context, in *HealthRequest, opts ...grpc.CallOption) (*HealthResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(HealthResponse)
+	err := c.cc.Invoke(ctx, MPCNodeService_HealthCheck_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// MPCNodeServiceServer is the server API for MPCNodeService service.
+// All implementations must embed UnimplementedMPCNodeServiceServer
+// for forward compatibility.
+//
+// MPCNodeService - MPC 节点服务 (基于消息队列模式)
+// 每个 MPC 节点作为独立 gRPC 服务, 接收分片并计算贡献
+// 协调节点通过此服务与各 MPC 节点通信, 实现真正的分布式 MPC
+type MPCNodeServiceServer interface {
+	// 接收服务器分片 (流式, 支持批量)
+	ReceiveShards(grpc.ClientStreamingServer[ShardMessage, MPCResponse]) error
+	// 接收客户端分片
+	ReceiveClientShard(context.Context, *ClientShardMessage) (*MPCResponse, error)
+	// 请求节点计算重随机化贡献
+	ComputeContribution(context.Context, *ComputeRequest) (*ContributionResponse, error)
+	// 置换分片 (ORP 协作)
+	PermuteShards(context.Context, *PermuteRequest) (*MPCResponse, error)
+	// 健康检查
+	HealthCheck(context.Context, *HealthRequest) (*HealthResponse, error)
+	mustEmbedUnimplementedMPCNodeServiceServer()
+}
+
+// UnimplementedMPCNodeServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedMPCNodeServiceServer struct{}
+
+func (UnimplementedMPCNodeServiceServer) ReceiveShards(grpc.ClientStreamingServer[ShardMessage, MPCResponse]) error {
+	return status.Error(codes.Unimplemented, "method ReceiveShards not implemented")
+}
+func (UnimplementedMPCNodeServiceServer) ReceiveClientShard(context.Context, *ClientShardMessage) (*MPCResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReceiveClientShard not implemented")
+}
+func (UnimplementedMPCNodeServiceServer) ComputeContribution(context.Context, *ComputeRequest) (*ContributionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ComputeContribution not implemented")
+}
+func (UnimplementedMPCNodeServiceServer) PermuteShards(context.Context, *PermuteRequest) (*MPCResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PermuteShards not implemented")
+}
+func (UnimplementedMPCNodeServiceServer) HealthCheck(context.Context, *HealthRequest) (*HealthResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method HealthCheck not implemented")
+}
+func (UnimplementedMPCNodeServiceServer) mustEmbedUnimplementedMPCNodeServiceServer() {}
+func (UnimplementedMPCNodeServiceServer) testEmbeddedByValue()                        {}
+
+// UnsafeMPCNodeServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to MPCNodeServiceServer will
+// result in compilation errors.
+type UnsafeMPCNodeServiceServer interface {
+	mustEmbedUnimplementedMPCNodeServiceServer()
+}
+
+func RegisterMPCNodeServiceServer(s grpc.ServiceRegistrar, srv MPCNodeServiceServer) {
+	// If the following call panics, it indicates UnimplementedMPCNodeServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&MPCNodeService_ServiceDesc, srv)
+}
+
+func _MPCNodeService_ReceiveShards_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(MPCNodeServiceServer).ReceiveShards(&grpc.GenericServerStream[ShardMessage, MPCResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type MPCNodeService_ReceiveShardsServer = grpc.ClientStreamingServer[ShardMessage, MPCResponse]
+
+func _MPCNodeService_ReceiveClientShard_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ClientShardMessage)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MPCNodeServiceServer).ReceiveClientShard(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MPCNodeService_ReceiveClientShard_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MPCNodeServiceServer).ReceiveClientShard(ctx, req.(*ClientShardMessage))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MPCNodeService_ComputeContribution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ComputeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MPCNodeServiceServer).ComputeContribution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MPCNodeService_ComputeContribution_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MPCNodeServiceServer).ComputeContribution(ctx, req.(*ComputeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MPCNodeService_PermuteShards_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PermuteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MPCNodeServiceServer).PermuteShards(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MPCNodeService_PermuteShards_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MPCNodeServiceServer).PermuteShards(ctx, req.(*PermuteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _MPCNodeService_HealthCheck_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HealthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MPCNodeServiceServer).HealthCheck(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MPCNodeService_HealthCheck_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MPCNodeServiceServer).HealthCheck(ctx, req.(*HealthRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// MPCNodeService_ServiceDesc is the grpc.ServiceDesc for MPCNodeService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var MPCNodeService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "proto.MPCNodeService",
+	HandlerType: (*MPCNodeServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ReceiveClientShard",
+			Handler:    _MPCNodeService_ReceiveClientShard_Handler,
+		},
+		{
+			MethodName: "ComputeContribution",
+			Handler:    _MPCNodeService_ComputeContribution_Handler,
+		},
+		{
+			MethodName: "PermuteShards",
+			Handler:    _MPCNodeService_PermuteShards_Handler,
+		},
+		{
+			MethodName: "HealthCheck",
+			Handler:    _MPCNodeService_HealthCheck_Handler,
+		},
+	},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "ReceiveShards",
+			Handler:       _MPCNodeService_ReceiveShards_Handler,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "chat.proto",
 }
 

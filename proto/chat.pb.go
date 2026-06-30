@@ -414,7 +414,8 @@ type MerkleRootResponse struct {
 	MerkleRoot    []byte                 `protobuf:"bytes,1,opt,name=merkle_root,json=merkleRoot,proto3" json:"merkle_root,omitempty"`
 	NumLeaves     int32                  `protobuf:"varint,2,opt,name=num_leaves,json=numLeaves,proto3" json:"num_leaves,omitempty"`
 	LeafHashes    [][]byte               `protobuf:"bytes,3,rep,name=leaf_hashes,json=leafHashes,proto3" json:"leaf_hashes,omitempty"` // 叶子哈希 (用于 proof 生成)
-	Success       bool                   `protobuf:"varint,4,opt,name=success,proto3" json:"success,omitempty"`
+	LeafData      [][]byte               `protobuf:"bytes,4,rep,name=leaf_data,json=leafData,proto3" json:"leaf_data,omitempty"`       // 叶子原始数据 (用于 proof 生成)
+	Success       bool                   `protobuf:"varint,5,opt,name=success,proto3" json:"success,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -470,11 +471,694 @@ func (x *MerkleRootResponse) GetLeafHashes() [][]byte {
 	return nil
 }
 
+func (x *MerkleRootResponse) GetLeafData() [][]byte {
+	if x != nil {
+		return x.LeafData
+	}
+	return nil
+}
+
 func (x *MerkleRootResponse) GetSuccess() bool {
 	if x != nil {
 		return x.Success
 	}
 	return false
+}
+
+// GeneratorRequest - 客户端请求订阅生成元 G
+type GeneratorRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ClientId      int32                  `protobuf:"varint,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GeneratorRequest) Reset() {
+	*x = GeneratorRequest{}
+	mi := &file_chat_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GeneratorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GeneratorRequest) ProtoMessage() {}
+
+func (x *GeneratorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GeneratorRequest.ProtoReflect.Descriptor instead.
+func (*GeneratorRequest) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GeneratorRequest) GetClientId() int32 {
+	if x != nil {
+		return x.ClientId
+	}
+	return 0
+}
+
+// GeneratorResponse - 服务器推送的生成元 G
+type GeneratorResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	GeneratorG    []byte                 `protobuf:"bytes,1,opt,name=generator_g,json=generatorG,proto3" json:"generator_g,omitempty"`
+	ServerId      int32                  `protobuf:"varint,2,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GeneratorResponse) Reset() {
+	*x = GeneratorResponse{}
+	mi := &file_chat_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GeneratorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GeneratorResponse) ProtoMessage() {}
+
+func (x *GeneratorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GeneratorResponse.ProtoReflect.Descriptor instead.
+func (*GeneratorResponse) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *GeneratorResponse) GetGeneratorG() []byte {
+	if x != nil {
+		return x.GeneratorG
+	}
+	return nil
+}
+
+func (x *GeneratorResponse) GetServerId() int32 {
+	if x != nil {
+		return x.ServerId
+	}
+	return 0
+}
+
+// StageRequest - 等待指定阶段就绪
+type StageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Stage         string                 `protobuf:"bytes,1,opt,name=stage,proto3" json:"stage,omitempty"`                           // "commitments" | "rerandomized" | "merkle"
+	TimeoutMs     int32                  `protobuf:"varint,2,opt,name=timeout_ms,json=timeoutMs,proto3" json:"timeout_ms,omitempty"` // 超时毫秒, 0 表示无限等待
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StageRequest) Reset() {
+	*x = StageRequest{}
+	mi := &file_chat_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StageRequest) ProtoMessage() {}
+
+func (x *StageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StageRequest.ProtoReflect.Descriptor instead.
+func (*StageRequest) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *StageRequest) GetStage() string {
+	if x != nil {
+		return x.Stage
+	}
+	return ""
+}
+
+func (x *StageRequest) GetTimeoutMs() int32 {
+	if x != nil {
+		return x.TimeoutMs
+	}
+	return 0
+}
+
+// StageResponse - 阶段就绪响应
+type StageResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ready         bool                   `protobuf:"varint,1,opt,name=ready,proto3" json:"ready,omitempty"`
+	Stage         string                 `protobuf:"bytes,2,opt,name=stage,proto3" json:"stage,omitempty"`
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StageResponse) Reset() {
+	*x = StageResponse{}
+	mi := &file_chat_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StageResponse) ProtoMessage() {}
+
+func (x *StageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StageResponse.ProtoReflect.Descriptor instead.
+func (*StageResponse) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *StageResponse) GetReady() bool {
+	if x != nil {
+		return x.Ready
+	}
+	return false
+}
+
+func (x *StageResponse) GetStage() string {
+	if x != nil {
+		return x.Stage
+	}
+	return ""
+}
+
+func (x *StageResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+// ShardMessage - 发送到 MPC 节点的分片消息
+type ShardMessage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        int32                  `protobuf:"varint,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`                     // 目标 MPC 节点 ID
+	ServerId      int32                  `protobuf:"varint,2,opt,name=server_id,json=serverId,proto3" json:"server_id,omitempty"`               // 来源服务器 ID
+	AttributeId   int32                  `protobuf:"varint,3,opt,name=attribute_id,json=attributeId,proto3" json:"attribute_id,omitempty"`      // 属性 ID
+	Commitment    []byte                 `protobuf:"bytes,4,opt,name=commitment,proto3" json:"commitment,omitempty"`                            // 原始 Pedersen 承诺
+	RerandomShare []byte                 `protobuf:"bytes,5,opt,name=rerandom_share,json=rerandomShare,proto3" json:"rerandom_share,omitempty"` // 重随机化分片
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShardMessage) Reset() {
+	*x = ShardMessage{}
+	mi := &file_chat_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShardMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShardMessage) ProtoMessage() {}
+
+func (x *ShardMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShardMessage.ProtoReflect.Descriptor instead.
+func (*ShardMessage) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ShardMessage) GetNodeId() int32 {
+	if x != nil {
+		return x.NodeId
+	}
+	return 0
+}
+
+func (x *ShardMessage) GetServerId() int32 {
+	if x != nil {
+		return x.ServerId
+	}
+	return 0
+}
+
+func (x *ShardMessage) GetAttributeId() int32 {
+	if x != nil {
+		return x.AttributeId
+	}
+	return 0
+}
+
+func (x *ShardMessage) GetCommitment() []byte {
+	if x != nil {
+		return x.Commitment
+	}
+	return nil
+}
+
+func (x *ShardMessage) GetRerandomShare() []byte {
+	if x != nil {
+		return x.RerandomShare
+	}
+	return nil
+}
+
+// ClientShardMessage - 客户端分片消息
+type ClientShardMessage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        int32                  `protobuf:"varint,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`               // 目标 MPC 节点 ID
+	ClientShare   []byte                 `protobuf:"bytes,2,opt,name=client_share,json=clientShare,proto3" json:"client_share,omitempty"` // 客户端参数分片
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ClientShardMessage) Reset() {
+	*x = ClientShardMessage{}
+	mi := &file_chat_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ClientShardMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ClientShardMessage) ProtoMessage() {}
+
+func (x *ClientShardMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ClientShardMessage.ProtoReflect.Descriptor instead.
+func (*ClientShardMessage) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ClientShardMessage) GetNodeId() int32 {
+	if x != nil {
+		return x.NodeId
+	}
+	return 0
+}
+
+func (x *ClientShardMessage) GetClientShare() []byte {
+	if x != nil {
+		return x.ClientShare
+	}
+	return nil
+}
+
+// MPCResponse - MPC 节点通用响应
+type MPCResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	NodeId        int32                  `protobuf:"varint,3,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MPCResponse) Reset() {
+	*x = MPCResponse{}
+	mi := &file_chat_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MPCResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MPCResponse) ProtoMessage() {}
+
+func (x *MPCResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MPCResponse.ProtoReflect.Descriptor instead.
+func (*MPCResponse) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *MPCResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *MPCResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *MPCResponse) GetNodeId() int32 {
+	if x != nil {
+		return x.NodeId
+	}
+	return 0
+}
+
+// ComputeRequest - 请求 MPC 节点计算贡献
+type ComputeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        int32                  `protobuf:"varint,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ComputeRequest) Reset() {
+	*x = ComputeRequest{}
+	mi := &file_chat_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ComputeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ComputeRequest) ProtoMessage() {}
+
+func (x *ComputeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ComputeRequest.ProtoReflect.Descriptor instead.
+func (*ComputeRequest) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ComputeRequest) GetNodeId() int32 {
+	if x != nil {
+		return x.NodeId
+	}
+	return 0
+}
+
+// ContributionResponse - MPC 节点的重随机化贡献
+type ContributionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        int32                  `protobuf:"varint,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Contributions map[int32][]byte       `protobuf:"bytes,2,rep,name=contributions,proto3" json:"contributions,omitempty" protobuf_key:"varint,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // attribute_id -> 贡献 (G1Affine 序列化)
+	Success       bool                   `protobuf:"varint,3,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContributionResponse) Reset() {
+	*x = ContributionResponse{}
+	mi := &file_chat_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContributionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContributionResponse) ProtoMessage() {}
+
+func (x *ContributionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContributionResponse.ProtoReflect.Descriptor instead.
+func (*ContributionResponse) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ContributionResponse) GetNodeId() int32 {
+	if x != nil {
+		return x.NodeId
+	}
+	return 0
+}
+
+func (x *ContributionResponse) GetContributions() map[int32][]byte {
+	if x != nil {
+		return x.Contributions
+	}
+	return nil
+}
+
+func (x *ContributionResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *ContributionResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+// PermuteRequest - 置换请求 (ORP 协作)
+type PermuteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        int32                  `protobuf:"varint,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Permutation   []int32                `protobuf:"varint,2,rep,packed,name=permutation,proto3" json:"permutation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PermuteRequest) Reset() {
+	*x = PermuteRequest{}
+	mi := &file_chat_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PermuteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PermuteRequest) ProtoMessage() {}
+
+func (x *PermuteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PermuteRequest.ProtoReflect.Descriptor instead.
+func (*PermuteRequest) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *PermuteRequest) GetNodeId() int32 {
+	if x != nil {
+		return x.NodeId
+	}
+	return 0
+}
+
+func (x *PermuteRequest) GetPermutation() []int32 {
+	if x != nil {
+		return x.Permutation
+	}
+	return nil
+}
+
+// HealthRequest - 健康检查请求
+type HealthRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HealthRequest) Reset() {
+	*x = HealthRequest{}
+	mi := &file_chat_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HealthRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HealthRequest) ProtoMessage() {}
+
+func (x *HealthRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HealthRequest.ProtoReflect.Descriptor instead.
+func (*HealthRequest) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{18}
+}
+
+// HealthResponse - 健康检查响应
+type HealthResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Healthy       bool                   `protobuf:"varint,1,opt,name=healthy,proto3" json:"healthy,omitempty"`
+	NodeId        int32                  `protobuf:"varint,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	PendingShards int32                  `protobuf:"varint,3,opt,name=pending_shards,json=pendingShards,proto3" json:"pending_shards,omitempty"`
+	Message       string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HealthResponse) Reset() {
+	*x = HealthResponse{}
+	mi := &file_chat_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HealthResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HealthResponse) ProtoMessage() {}
+
+func (x *HealthResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
+func (*HealthResponse) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *HealthResponse) GetHealthy() bool {
+	if x != nil {
+		return x.Healthy
+	}
+	return false
+}
+
+func (x *HealthResponse) GetNodeId() int32 {
+	if x != nil {
+		return x.NodeId
+	}
+	return 0
+}
+
+func (x *HealthResponse) GetPendingShards() int32 {
+	if x != nil {
+		return x.PendingShards
+	}
+	return 0
+}
+
+func (x *HealthResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
 }
 
 type RegisterRequest struct {
@@ -486,7 +1170,7 @@ type RegisterRequest struct {
 
 func (x *RegisterRequest) Reset() {
 	*x = RegisterRequest{}
-	mi := &file_chat_proto_msgTypes[8]
+	mi := &file_chat_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -498,7 +1182,7 @@ func (x *RegisterRequest) String() string {
 func (*RegisterRequest) ProtoMessage() {}
 
 func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chat_proto_msgTypes[8]
+	mi := &file_chat_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -511,7 +1195,7 @@ func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterRequest.ProtoReflect.Descriptor instead.
 func (*RegisterRequest) Descriptor() ([]byte, []int) {
-	return file_chat_proto_rawDescGZIP(), []int{8}
+	return file_chat_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RegisterRequest) GetAddress() string {
@@ -531,7 +1215,7 @@ type MatchResponse struct {
 
 func (x *MatchResponse) Reset() {
 	*x = MatchResponse{}
-	mi := &file_chat_proto_msgTypes[9]
+	mi := &file_chat_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -543,7 +1227,7 @@ func (x *MatchResponse) String() string {
 func (*MatchResponse) ProtoMessage() {}
 
 func (x *MatchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chat_proto_msgTypes[9]
+	mi := &file_chat_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -556,7 +1240,7 @@ func (x *MatchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MatchResponse.ProtoReflect.Descriptor instead.
 func (*MatchResponse) Descriptor() ([]byte, []int) {
-	return file_chat_proto_rawDescGZIP(), []int{9}
+	return file_chat_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *MatchResponse) GetPeerAddress() string {
@@ -583,7 +1267,7 @@ type ResultRequest struct {
 
 func (x *ResultRequest) Reset() {
 	*x = ResultRequest{}
-	mi := &file_chat_proto_msgTypes[10]
+	mi := &file_chat_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -595,7 +1279,7 @@ func (x *ResultRequest) String() string {
 func (*ResultRequest) ProtoMessage() {}
 
 func (x *ResultRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chat_proto_msgTypes[10]
+	mi := &file_chat_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -608,7 +1292,7 @@ func (x *ResultRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResultRequest.ProtoReflect.Descriptor instead.
 func (*ResultRequest) Descriptor() ([]byte, []int) {
-	return file_chat_proto_rawDescGZIP(), []int{10}
+	return file_chat_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ResultRequest) GetSequence() int32 {
@@ -634,7 +1318,7 @@ type ResultResponse struct {
 
 func (x *ResultResponse) Reset() {
 	*x = ResultResponse{}
-	mi := &file_chat_proto_msgTypes[11]
+	mi := &file_chat_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -646,7 +1330,7 @@ func (x *ResultResponse) String() string {
 func (*ResultResponse) ProtoMessage() {}
 
 func (x *ResultResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chat_proto_msgTypes[11]
+	mi := &file_chat_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -659,7 +1343,7 @@ func (x *ResultResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResultResponse.ProtoReflect.Descriptor instead.
 func (*ResultResponse) Descriptor() ([]byte, []int) {
-	return file_chat_proto_rawDescGZIP(), []int{11}
+	return file_chat_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ResultResponse) GetProcessedData() []byte {
@@ -679,7 +1363,7 @@ type SignRequest struct {
 
 func (x *SignRequest) Reset() {
 	*x = SignRequest{}
-	mi := &file_chat_proto_msgTypes[12]
+	mi := &file_chat_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -691,7 +1375,7 @@ func (x *SignRequest) String() string {
 func (*SignRequest) ProtoMessage() {}
 
 func (x *SignRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chat_proto_msgTypes[12]
+	mi := &file_chat_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -704,7 +1388,7 @@ func (x *SignRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignRequest.ProtoReflect.Descriptor instead.
 func (*SignRequest) Descriptor() ([]byte, []int) {
-	return file_chat_proto_rawDescGZIP(), []int{12}
+	return file_chat_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *SignRequest) GetSignedMessage() []byte {
@@ -731,7 +1415,7 @@ type SignResponse struct {
 
 func (x *SignResponse) Reset() {
 	*x = SignResponse{}
-	mi := &file_chat_proto_msgTypes[13]
+	mi := &file_chat_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -743,7 +1427,7 @@ func (x *SignResponse) String() string {
 func (*SignResponse) ProtoMessage() {}
 
 func (x *SignResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chat_proto_msgTypes[13]
+	mi := &file_chat_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -756,7 +1440,7 @@ func (x *SignResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SignResponse.ProtoReflect.Descriptor instead.
 func (*SignResponse) Descriptor() ([]byte, []int) {
-	return file_chat_proto_rawDescGZIP(), []int{13}
+	return file_chat_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *SignResponse) GetAggrResult() []byte {
@@ -783,7 +1467,7 @@ type Message struct {
 
 func (x *Message) Reset() {
 	*x = Message{}
-	mi := &file_chat_proto_msgTypes[14]
+	mi := &file_chat_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -795,7 +1479,7 @@ func (x *Message) String() string {
 func (*Message) ProtoMessage() {}
 
 func (x *Message) ProtoReflect() protoreflect.Message {
-	mi := &file_chat_proto_msgTypes[14]
+	mi := &file_chat_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -808,7 +1492,7 @@ func (x *Message) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Message.ProtoReflect.Descriptor instead.
 func (*Message) Descriptor() ([]byte, []int) {
-	return file_chat_proto_rawDescGZIP(), []int{14}
+	return file_chat_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *Message) GetSequence() int32 {
@@ -856,15 +1540,64 @@ const file_chat_proto_rawDesc = "" +
 	"\x14permuted_commitments\x18\x01 \x03(\fR\x13permutedCommitments\x12\x18\n" +
 	"\asuccess\x18\x02 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\"\x13\n" +
-	"\x11MerkleRootRequest\"\x8f\x01\n" +
+	"\x11MerkleRootRequest\"\xac\x01\n" +
 	"\x12MerkleRootResponse\x12\x1f\n" +
 	"\vmerkle_root\x18\x01 \x01(\fR\n" +
 	"merkleRoot\x12\x1d\n" +
 	"\n" +
 	"num_leaves\x18\x02 \x01(\x05R\tnumLeaves\x12\x1f\n" +
 	"\vleaf_hashes\x18\x03 \x03(\fR\n" +
-	"leafHashes\x12\x18\n" +
-	"\asuccess\x18\x04 \x01(\bR\asuccess\"+\n" +
+	"leafHashes\x12\x1b\n" +
+	"\tleaf_data\x18\x04 \x03(\fR\bleafData\x12\x18\n" +
+	"\asuccess\x18\x05 \x01(\bR\asuccess\"/\n" +
+	"\x10GeneratorRequest\x12\x1b\n" +
+	"\tclient_id\x18\x01 \x01(\x05R\bclientId\"Q\n" +
+	"\x11GeneratorResponse\x12\x1f\n" +
+	"\vgenerator_g\x18\x01 \x01(\fR\n" +
+	"generatorG\x12\x1b\n" +
+	"\tserver_id\x18\x02 \x01(\x05R\bserverId\"C\n" +
+	"\fStageRequest\x12\x14\n" +
+	"\x05stage\x18\x01 \x01(\tR\x05stage\x12\x1d\n" +
+	"\n" +
+	"timeout_ms\x18\x02 \x01(\x05R\ttimeoutMs\"U\n" +
+	"\rStageResponse\x12\x14\n" +
+	"\x05ready\x18\x01 \x01(\bR\x05ready\x12\x14\n" +
+	"\x05stage\x18\x02 \x01(\tR\x05stage\x12\x18\n" +
+	"\amessage\x18\x03 \x01(\tR\amessage\"\xae\x01\n" +
+	"\fShardMessage\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\x05R\x06nodeId\x12\x1b\n" +
+	"\tserver_id\x18\x02 \x01(\x05R\bserverId\x12!\n" +
+	"\fattribute_id\x18\x03 \x01(\x05R\vattributeId\x12\x1e\n" +
+	"\n" +
+	"commitment\x18\x04 \x01(\fR\n" +
+	"commitment\x12%\n" +
+	"\x0ererandom_share\x18\x05 \x01(\fR\rrerandomShare\"P\n" +
+	"\x12ClientShardMessage\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\x05R\x06nodeId\x12!\n" +
+	"\fclient_share\x18\x02 \x01(\fR\vclientShare\"Z\n" +
+	"\vMPCResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12\x17\n" +
+	"\anode_id\x18\x03 \x01(\x05R\x06nodeId\")\n" +
+	"\x0eComputeRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\x05R\x06nodeId\"\xfb\x01\n" +
+	"\x14ContributionResponse\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\x05R\x06nodeId\x12T\n" +
+	"\rcontributions\x18\x02 \x03(\v2..proto.ContributionResponse.ContributionsEntryR\rcontributions\x12\x18\n" +
+	"\asuccess\x18\x03 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x04 \x01(\tR\amessage\x1a@\n" +
+	"\x12ContributionsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\x05R\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\fR\x05value:\x028\x01\"K\n" +
+	"\x0ePermuteRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\x05R\x06nodeId\x12 \n" +
+	"\vpermutation\x18\x02 \x03(\x05R\vpermutation\"\x0f\n" +
+	"\rHealthRequest\"\x84\x01\n" +
+	"\x0eHealthResponse\x12\x18\n" +
+	"\ahealthy\x18\x01 \x01(\bR\ahealthy\x12\x17\n" +
+	"\anode_id\x18\x02 \x01(\x05R\x06nodeId\x12%\n" +
+	"\x0epending_shards\x18\x03 \x01(\x05R\rpendingShards\x12\x18\n" +
+	"\amessage\x18\x04 \x01(\tR\amessage\"+\n" +
 	"\x0fRegisterRequest\x12\x18\n" +
 	"\aaddress\x18\x01 \x01(\tR\aaddress\"W\n" +
 	"\rMatchResponse\x12!\n" +
@@ -888,13 +1621,21 @@ const file_chat_proto_rawDesc = "" +
 	"\aMessage\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x05R\bsequence\x12\x1f\n" +
 	"\vclient_data\x18\x02 \x01(\fR\n" +
-	"clientData2\xb6\x02\n" +
+	"clientData2\xbf\x03\n" +
 	"\n" +
-	"DIDService\x12G\n" +
-	"\x10SubmitCommitment\x12\x18.proto.CommitmentRequest\x1a\x19.proto.CommitmentResponse\x12M\n" +
+	"DIDService\x12J\n" +
+	"\x11SubmitCommitments\x12\x18.proto.CommitmentRequest\x1a\x19.proto.CommitmentResponse(\x01\x12M\n" +
 	"\x12SubmitClientParams\x12\x1a.proto.ClientParamsRequest\x1a\x1b.proto.ClientParamsResponse\x12J\n" +
 	"\x11SubmitPermutation\x12\x19.proto.PermutationRequest\x1a\x1a.proto.PermutationResponse\x12D\n" +
-	"\rGetMerkleRoot\x12\x18.proto.MerkleRootRequest\x1a\x19.proto.MerkleRootResponse2\xbd\x01\n" +
+	"\rGetMerkleRoot\x12\x18.proto.MerkleRootRequest\x1a\x19.proto.MerkleRootResponse\x12I\n" +
+	"\x12SubscribeGenerator\x12\x17.proto.GeneratorRequest\x1a\x18.proto.GeneratorResponse0\x01\x129\n" +
+	"\fWaitForStage\x12\x13.proto.StageRequest\x1a\x14.proto.StageResponse2\xd4\x02\n" +
+	"\x0eMPCNodeService\x12:\n" +
+	"\rReceiveShards\x12\x13.proto.ShardMessage\x1a\x12.proto.MPCResponse(\x01\x12C\n" +
+	"\x12ReceiveClientShard\x12\x19.proto.ClientShardMessage\x1a\x12.proto.MPCResponse\x12I\n" +
+	"\x13ComputeContribution\x12\x15.proto.ComputeRequest\x1a\x1b.proto.ContributionResponse\x12:\n" +
+	"\rPermuteShards\x12\x15.proto.PermuteRequest\x1a\x12.proto.MPCResponse\x12:\n" +
+	"\vHealthCheck\x12\x14.proto.HealthRequest\x1a\x15.proto.HealthResponse2\xbd\x01\n" +
 	"\fMatchService\x128\n" +
 	"\bRegister\x12\x16.proto.RegisterRequest\x1a\x14.proto.MatchResponse\x12;\n" +
 	"\fSubmitResult\x12\x14.proto.ResultRequest\x1a\x15.proto.ResultResponse\x126\n" +
@@ -914,7 +1655,7 @@ func file_chat_proto_rawDescGZIP() []byte {
 	return file_chat_proto_rawDescData
 }
 
-var file_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_chat_proto_goTypes = []any{
 	(*CommitmentRequest)(nil),    // 0: proto.CommitmentRequest
 	(*CommitmentResponse)(nil),   // 1: proto.CommitmentResponse
@@ -924,36 +1665,64 @@ var file_chat_proto_goTypes = []any{
 	(*PermutationResponse)(nil),  // 5: proto.PermutationResponse
 	(*MerkleRootRequest)(nil),    // 6: proto.MerkleRootRequest
 	(*MerkleRootResponse)(nil),   // 7: proto.MerkleRootResponse
-	(*RegisterRequest)(nil),      // 8: proto.RegisterRequest
-	(*MatchResponse)(nil),        // 9: proto.MatchResponse
-	(*ResultRequest)(nil),        // 10: proto.ResultRequest
-	(*ResultResponse)(nil),       // 11: proto.ResultResponse
-	(*SignRequest)(nil),          // 12: proto.SignRequest
-	(*SignResponse)(nil),         // 13: proto.SignResponse
-	(*Message)(nil),              // 14: proto.Message
+	(*GeneratorRequest)(nil),     // 8: proto.GeneratorRequest
+	(*GeneratorResponse)(nil),    // 9: proto.GeneratorResponse
+	(*StageRequest)(nil),         // 10: proto.StageRequest
+	(*StageResponse)(nil),        // 11: proto.StageResponse
+	(*ShardMessage)(nil),         // 12: proto.ShardMessage
+	(*ClientShardMessage)(nil),   // 13: proto.ClientShardMessage
+	(*MPCResponse)(nil),          // 14: proto.MPCResponse
+	(*ComputeRequest)(nil),       // 15: proto.ComputeRequest
+	(*ContributionResponse)(nil), // 16: proto.ContributionResponse
+	(*PermuteRequest)(nil),       // 17: proto.PermuteRequest
+	(*HealthRequest)(nil),        // 18: proto.HealthRequest
+	(*HealthResponse)(nil),       // 19: proto.HealthResponse
+	(*RegisterRequest)(nil),      // 20: proto.RegisterRequest
+	(*MatchResponse)(nil),        // 21: proto.MatchResponse
+	(*ResultRequest)(nil),        // 22: proto.ResultRequest
+	(*ResultResponse)(nil),       // 23: proto.ResultResponse
+	(*SignRequest)(nil),          // 24: proto.SignRequest
+	(*SignResponse)(nil),         // 25: proto.SignResponse
+	(*Message)(nil),              // 26: proto.Message
+	nil,                          // 27: proto.ContributionResponse.ContributionsEntry
 }
 var file_chat_proto_depIdxs = []int32{
-	0,  // 0: proto.DIDService.SubmitCommitment:input_type -> proto.CommitmentRequest
-	2,  // 1: proto.DIDService.SubmitClientParams:input_type -> proto.ClientParamsRequest
-	4,  // 2: proto.DIDService.SubmitPermutation:input_type -> proto.PermutationRequest
-	6,  // 3: proto.DIDService.GetMerkleRoot:input_type -> proto.MerkleRootRequest
-	8,  // 4: proto.MatchService.Register:input_type -> proto.RegisterRequest
-	10, // 5: proto.MatchService.SubmitResult:input_type -> proto.ResultRequest
-	12, // 6: proto.MatchService.SignMessage:input_type -> proto.SignRequest
-	14, // 7: proto.ChatService.Chat:input_type -> proto.Message
-	1,  // 8: proto.DIDService.SubmitCommitment:output_type -> proto.CommitmentResponse
-	3,  // 9: proto.DIDService.SubmitClientParams:output_type -> proto.ClientParamsResponse
-	5,  // 10: proto.DIDService.SubmitPermutation:output_type -> proto.PermutationResponse
-	7,  // 11: proto.DIDService.GetMerkleRoot:output_type -> proto.MerkleRootResponse
-	9,  // 12: proto.MatchService.Register:output_type -> proto.MatchResponse
-	11, // 13: proto.MatchService.SubmitResult:output_type -> proto.ResultResponse
-	13, // 14: proto.MatchService.SignMessage:output_type -> proto.SignResponse
-	14, // 15: proto.ChatService.Chat:output_type -> proto.Message
-	8,  // [8:16] is the sub-list for method output_type
-	0,  // [0:8] is the sub-list for method input_type
-	0,  // [0:0] is the sub-list for extension type_name
-	0,  // [0:0] is the sub-list for extension extendee
-	0,  // [0:0] is the sub-list for field type_name
+	27, // 0: proto.ContributionResponse.contributions:type_name -> proto.ContributionResponse.ContributionsEntry
+	0,  // 1: proto.DIDService.SubmitCommitments:input_type -> proto.CommitmentRequest
+	2,  // 2: proto.DIDService.SubmitClientParams:input_type -> proto.ClientParamsRequest
+	4,  // 3: proto.DIDService.SubmitPermutation:input_type -> proto.PermutationRequest
+	6,  // 4: proto.DIDService.GetMerkleRoot:input_type -> proto.MerkleRootRequest
+	8,  // 5: proto.DIDService.SubscribeGenerator:input_type -> proto.GeneratorRequest
+	10, // 6: proto.DIDService.WaitForStage:input_type -> proto.StageRequest
+	12, // 7: proto.MPCNodeService.ReceiveShards:input_type -> proto.ShardMessage
+	13, // 8: proto.MPCNodeService.ReceiveClientShard:input_type -> proto.ClientShardMessage
+	15, // 9: proto.MPCNodeService.ComputeContribution:input_type -> proto.ComputeRequest
+	17, // 10: proto.MPCNodeService.PermuteShards:input_type -> proto.PermuteRequest
+	18, // 11: proto.MPCNodeService.HealthCheck:input_type -> proto.HealthRequest
+	20, // 12: proto.MatchService.Register:input_type -> proto.RegisterRequest
+	22, // 13: proto.MatchService.SubmitResult:input_type -> proto.ResultRequest
+	24, // 14: proto.MatchService.SignMessage:input_type -> proto.SignRequest
+	26, // 15: proto.ChatService.Chat:input_type -> proto.Message
+	1,  // 16: proto.DIDService.SubmitCommitments:output_type -> proto.CommitmentResponse
+	3,  // 17: proto.DIDService.SubmitClientParams:output_type -> proto.ClientParamsResponse
+	5,  // 18: proto.DIDService.SubmitPermutation:output_type -> proto.PermutationResponse
+	7,  // 19: proto.DIDService.GetMerkleRoot:output_type -> proto.MerkleRootResponse
+	9,  // 20: proto.DIDService.SubscribeGenerator:output_type -> proto.GeneratorResponse
+	11, // 21: proto.DIDService.WaitForStage:output_type -> proto.StageResponse
+	14, // 22: proto.MPCNodeService.ReceiveShards:output_type -> proto.MPCResponse
+	14, // 23: proto.MPCNodeService.ReceiveClientShard:output_type -> proto.MPCResponse
+	16, // 24: proto.MPCNodeService.ComputeContribution:output_type -> proto.ContributionResponse
+	14, // 25: proto.MPCNodeService.PermuteShards:output_type -> proto.MPCResponse
+	19, // 26: proto.MPCNodeService.HealthCheck:output_type -> proto.HealthResponse
+	21, // 27: proto.MatchService.Register:output_type -> proto.MatchResponse
+	23, // 28: proto.MatchService.SubmitResult:output_type -> proto.ResultResponse
+	25, // 29: proto.MatchService.SignMessage:output_type -> proto.SignResponse
+	26, // 30: proto.ChatService.Chat:output_type -> proto.Message
+	16, // [16:31] is the sub-list for method output_type
+	1,  // [1:16] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_chat_proto_init() }
@@ -967,9 +1736,9 @@ func file_chat_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chat_proto_rawDesc), len(file_chat_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   28,
 			NumExtensions: 0,
-			NumServices:   3,
+			NumServices:   4,
 		},
 		GoTypes:           file_chat_proto_goTypes,
 		DependencyIndexes: file_chat_proto_depIdxs,

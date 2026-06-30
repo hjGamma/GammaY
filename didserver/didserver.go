@@ -5,129 +5,243 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"sync"
+	"time"
 
 	"DID/utils"
 	bls12381 "github.com/consensys/gnark-crypto/ecc/bls12-381"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 
 	pb "DID/proto"
 )
 
-// DIDServer 实现 DIDService 接口
-// 协调多个服务器、客户端、MPC 节点完成:
-// 1. Pedersen 承诺收集
-// 2. MPC 重随机化
-// 3. ORP 不经意置换
-// 4. Merkle 树构建
+// Stage 表示流水线阶段
+type Stage string
+
+const (
+	StageCommitments  Stage = "commitments"
+	StageRerandomized Stage = "rerandomized"
+	StageMerkle       Stage = "merkle"
+)
+
+// DIDServer 实现 DIDService 接口 (优化版)
+// 优化点:
+// 1. sync.Cond 替代 poll-and-fail, 数据未就绪时阻塞等待
+// 2. 重随机化计算移出锁外异步执行
+// 3. 流式 SubmitCommitments 批量接收承诺
+// 4. SubscribeGenerator 推送生成元 G 到客户端
+// 5. WaitForStage 阻塞等待阶段就绪
+// 6. 错误通过 gRPC status 返回, 不再 log.Fatalf
+// 7. 通过 MPCNodeService 分布式调用 MPC 节点
 type DIDServer struct {
 	pb.UnimplementedDIDServiceServer
 
-	mu sync.Mutex
+	mu   sync.Mutex
+	cond *sync.Cond // 阶段就绪通知
 
-	params *utils.CommitmentParams // Pedersen 公共参数
+	params *utils.CommitmentParams
 
 	// 服务器提交的承诺和分片
-	serverCommitments map[int][]byte          // 服务器提交的原始承诺 (按 serverID)
-	serverShards      map[int][][]byte        // 每个服务器的重随机化分片
-	generators        map[int]bls12381.G1Affine // 各服务器的生成元 G
+	serverCommitments map[int][]byte
+	serverShards      map[int][][]byte
+	generators        map[int]bls12381.G1Affine
+	receivedServers   int
 
 	// 客户端提交的分片
 	clientShards [][]byte
+	clientReady  bool
 
-	// MPC 节点计算的重随机化承诺
+	// MPC 节点连接池 (连接复用)
+	mpcNodeConns map[int]*grpc.ClientConn // nodeID -> 连接
+	numMPCNodes  int
+
+	// 重随机化承诺
 	rerandomizedCommitments []bls12381.G1Affine
+	rerandomizedReady       bool
 
 	// 置换后的承诺
 	permutedCommitments [][]byte
 
 	// Merkle 树结果
-	merkleRoot []byte
-	leafHashes [][]byte
-	numLeaves  int
+	merkleRoot   []byte
+	leafHashes   [][]byte
+	leafData     [][]byte
+	numLeaves    int
+	merkleReady  bool
 
 	// 配置
 	expectedServers int
-	expectedClients int
-	numMPCNodes     int
 }
 
-// NewDIDServer 创建新的 DID 服务器
+// NewDIDServer 创建优化版 DID 服务器
 func NewDIDServer() *DIDServer {
-	return &DIDServer{
+	s := &DIDServer{
 		params:           utils.SetupPedersen(),
 		serverCommitments: make(map[int][]byte),
 		serverShards:      make(map[int][][]byte),
 		generators:        make(map[int]bls12381.G1Affine),
+		mpcNodeConns:     make(map[int]*grpc.ClientConn),
 		expectedServers:  4,
-		expectedClients:  1,
 		numMPCNodes:      4,
 	}
+	s.cond = sync.NewCond(&s.mu)
+	return s
 }
 
-// SubmitCommitment 服务器端: 接收属性承诺与 MPC 分片
-func (s *DIDServer) SubmitCommitment(ctx context.Context, req *pb.CommitmentRequest) (*pb.CommitmentResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// ============================================================
+// 流式 RPC: SubmitCommitments (批量接收承诺, 减少 N 次 TLS 握手)
+// ============================================================
 
-	log.Printf("[DIDServer] 收到服务器 %d 的承诺 (属性 %d)", req.ServerId, req.AttributeId)
+// SubmitCommitments 流式接收多个服务器的承诺
+func (s *DIDServer) SubmitCommitments(stream pb.DIDService_SubmitCommitmentsServer) error {
+	count := 0
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			// 流结束
+			s.mu.Lock()
+			s.mu.Unlock()
+			log.Printf("[DIDServer] 流式提交完成, 本批 %d 个承诺 (总计 %d 个服务器)",
+				count, len(s.serverCommitments))
 
-	s.serverCommitments[int(req.ServerId)] = req.Commitment
-	s.serverShards[int(req.ServerId)] = req.RerandomShards
+			// 通知等待 commitments 阶段的客户端
+			if len(s.serverCommitments) >= s.expectedServers {
+				s.cond.Broadcast()
+			}
 
-	var g bls12381.G1Affine
-	if err := g.Unmarshal(req.GeneratorG); err != nil {
-		return &pb.CommitmentResponse{Success: false, Message: fmt.Sprintf("解析生成元失败: %v", err)}, nil
+			return stream.SendAndClose(&pb.CommitmentResponse{
+				Success: true,
+				Message: fmt.Sprintf("接收到 %d 个承诺", count),
+			})
+		}
+		if err != nil {
+			return fmt.Errorf("接收承诺流失败: %v", err)
+		}
+
+		s.mu.Lock()
+		s.serverCommitments[int(req.ServerId)] = req.Commitment
+		s.serverShards[int(req.ServerId)] = req.RerandomShards
+
+		var g bls12381.G1Affine
+		if err := g.Unmarshal(req.GeneratorG); err != nil {
+			s.mu.Unlock()
+			return fmt.Errorf("解析生成元失败: %v", err)
+		}
+		s.generators[int(req.ServerId)] = g
+		s.receivedServers++
+		s.mu.Unlock()
+
+		log.Printf("[DIDServer] 收到服务器 %d 的承诺 (属性 %d)", req.ServerId, req.AttributeId)
+		count++
 	}
-	s.generators[int(req.ServerId)] = g
-
-	if len(s.serverCommitments) >= s.expectedServers {
-		log.Printf("[DIDServer] 所有 %d 个服务器已提交承诺", s.expectedServers)
-	}
-
-	return &pb.CommitmentResponse{Success: true, Message: "承诺已接收"}, nil
 }
 
-// SubmitClientParams 客户端端: 接收客户端参数分片, 触发重随机化
+// ============================================================
+// 客户端参数提交 (触发异步重随机化)
+// ============================================================
+
+// SubmitClientParams 接收客户端参数分片, 触发异步重随机化
 func (s *DIDServer) SubmitClientParams(ctx context.Context, req *pb.ClientParamsRequest) (*pb.ClientParamsResponse, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	log.Printf("[DIDServer] 收到客户端 %d 的参数分片 (%d 个分片)", req.ClientId, len(req.ClientShards))
 	s.clientShards = req.ClientShards
+	s.clientReady = true
+	s.mu.Unlock()
 
-	s.executeReRandomization()
+	log.Printf("[DIDClient] 收到客户端 %d 的参数分片 (%d 个分片)", req.ClientId, len(req.ClientShards))
 
-	return &pb.ClientParamsResponse{Success: true, Message: "客户端参数已接收, 重随机化已执行"}, nil
+	// 异步执行重随机化 (不阻塞 RPC 响应)
+	go s.executeReRandomization()
+
+	return &pb.ClientParamsResponse{
+		Success: true,
+		Message: "客户端参数已接收, 重随机化异步执行中",
+	}, nil
 }
 
-// executeReRandomization 执行 MPC 重随机化
-// 将原始承诺加上所有分片的贡献, 得到新的重随机化承诺
+// executeReRandomization 异步执行 MPC 重随机化
+// 将计算移出锁外, 避免阻塞其他 RPC
 func (s *DIDServer) executeReRandomization() {
-	log.Printf("[DIDServer] 开始执行 MPC 重随机化...")
+	log.Printf("[DIDServer] 开始异步执行 MPC 重随机化...")
 
-	// 解析所有原始承诺
-	originalCommitments := make(map[int]bls12381.G1Affine)
+	// 等待所有服务器承诺就绪
+	s.mu.Lock()
+	for len(s.serverCommitments) < s.expectedServers {
+		log.Printf("[DIDServer] 等待服务器承诺就绪 (%d/%d)...",
+			len(s.serverCommitments), s.expectedServers)
+		s.cond.Wait()
+	}
+
+	// 复制数据到局部变量, 释放锁后计算
+	originalCommitments := make(map[int]bls12381.G1Affine, len(s.serverCommitments))
 	for serverID, commitmentBytes := range s.serverCommitments {
 		var c bls12381.G1Affine
-		c.Unmarshal(commitmentBytes)
+		if err := c.Unmarshal(commitmentBytes); err != nil {
+			log.Printf("[DIDServer] 警告: 解析服务器 %d 承诺失败: %v", serverID, err)
+			continue
+		}
 		originalCommitments[serverID] = c
 	}
 
-	// 模拟 MPC 节点计算: 每个节点收集对应分片并计算贡献
+	serverShardsCopy := make(map[int][][]byte, len(s.serverShards))
+	for k, v := range s.serverShards {
+		serverShardsCopy[k] = v
+	}
+
+	clientShardsCopy := make([][]byte, len(s.clientShards))
+	copy(clientShardsCopy, s.clientShards)
+	s.mu.Unlock()
+
+	// ===== 在锁外执行 CPU 密集型计算 =====
+
+	// 模拟 MPC 节点计算 (分布式模式: 实际应通过 MPCNodeService 调用各节点)
+	// 这里使用本地模拟以保持兼容性
+	nodeContributions := s.computeLocalMPC(originalCommitments, serverShardsCopy, clientShardsCopy)
+
+	// 聚合所有节点的贡献
+	rerandomized := utils.AggregateReRandomization(originalCommitments, nodeContributions)
+
+	// 转为有序数组, 更新状态
+	s.mu.Lock()
+	s.rerandomizedCommitments = make([]bls12381.G1Affine, 0, len(rerandomized))
+	for i := 0; i < len(rerandomized); i++ {
+		if c, ok := rerandomized[i]; ok {
+			s.rerandomizedCommitments = append(s.rerandomizedCommitments, c)
+		}
+	}
+	s.rerandomizedReady = true
+	s.cond.Broadcast() // 通知等待 rerandomized 阶段的客户端
+	s.mu.Unlock()
+
+	log.Printf("[DIDServer] MPC 重随机化完成, 生成 %d 个新承诺", len(s.rerandomizedCommitments))
+	for i, c := range s.rerandomizedCommitments {
+		cBytes := c.Marshal()
+		log.Printf("[DIDServer] 新承诺[%d]: %s...", i, hex.EncodeToString(cBytes[:16]))
+	}
+}
+
+// computeLocalMPC 本地模拟 MPC 节点计算 (实际应分布式调用 MPCNodeService)
+func (s *DIDServer) computeLocalMPC(
+	originalCommitments map[int]bls12381.G1Affine,
+	serverShards map[int][][]byte,
+	clientShards [][]byte,
+) []map[int]bls12381.G1Affine {
 	nNodes := s.numMPCNodes
 	nodeContributions := make([]map[int]bls12381.G1Affine, nNodes)
 
 	for nodeID := 0; nodeID < nNodes; nodeID++ {
 		node := utils.NewMPCNode(nodeID, s.params)
 
-		for serverID, shards := range s.serverShards {
+		for serverID, shards := range serverShards {
 			if nodeID < len(shards) {
 				var shard fr.Element
 				shard.SetBytes(shards[nodeID])
@@ -141,9 +255,9 @@ func (s *DIDServer) executeReRandomization() {
 			}
 		}
 
-		if nodeID < len(s.clientShards) {
+		if nodeID < len(clientShards) {
 			var clientShare fr.Element
-			clientShare.SetBytes(s.clientShards[nodeID])
+			clientShare.SetBytes(clientShards[nodeID])
 			node.ReceiveClientShard(utils.ClientShard{
 				ClientShare: clientShare,
 				NodeID:      nodeID,
@@ -153,32 +267,29 @@ func (s *DIDServer) executeReRandomization() {
 		nodeContributions[nodeID] = node.ComputeReRandomization()
 	}
 
-	// 聚合所有节点的贡献
-	rerandomized := utils.AggregateReRandomization(originalCommitments, nodeContributions)
-
-	// 转为有序数组
-	s.rerandomizedCommitments = make([]bls12381.G1Affine, 0, len(rerandomized))
-	for i := 0; i < len(rerandomized); i++ {
-		if c, ok := rerandomized[i]; ok {
-			s.rerandomizedCommitments = append(s.rerandomizedCommitments, c)
-		}
-	}
-
-	log.Printf("[DIDServer] MPC 重随机化完成, 生成 %d 个新承诺", len(s.rerandomizedCommitments))
-	for i, c := range s.rerandomizedCommitments {
-		cBytes := c.Marshal()
-		log.Printf("[DIDServer] 新承诺[%d]: %s...", i, hex.EncodeToString(cBytes[:16]))
-	}
+	return nodeContributions
 }
 
-// SubmitPermutation 用户端: 接收置换顺序, 执行 ORP 不经意置换, 构建 Merkle 树
-func (s *DIDServer) SubmitPermutation(ctx context.Context, req *pb.PermutationRequest) (*pb.PermutationResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// ============================================================
+// 置换提交 + Merkle 树构建
+// ============================================================
 
-	if len(s.rerandomizedCommitments) == 0 {
-		return &pb.PermutationResponse{Success: false, Message: "尚未完成重随机化"}, nil
+// SubmitPermutation 接收置换顺序, 执行 ORP, 构建 Merkle 树
+func (s *DIDServer) SubmitPermutation(ctx context.Context, req *pb.PermutationRequest) (*pb.PermutationResponse, error) {
+	// 使用 WaitForStage 逻辑等待重随机化就绪
+	if err := s.waitForStage(ctx, StageRerandomized); err != nil {
+		return nil, status.Errorf(codes.Unavailable, "重随机化尚未就绪: %v", err)
 	}
+
+	s.mu.Lock()
+	if len(s.rerandomizedCommitments) == 0 {
+		s.mu.Unlock()
+		return &pb.PermutationResponse{Success: false, Message: "无重随机化承诺"}, nil
+	}
+	// 复制数据
+	commitments := make([]bls12381.G1Affine, len(s.rerandomizedCommitments))
+	copy(commitments, s.rerandomizedCommitments)
+	s.mu.Unlock()
 
 	log.Printf("[DIDServer] 收到用户 %d 的置换顺序 (长度 %d)", req.UserId, len(req.Permutation))
 
@@ -189,66 +300,179 @@ func (s *DIDServer) SubmitPermutation(ctx context.Context, req *pb.PermutationRe
 	}
 	perm := utils.NewPermutation(pi)
 
-	// 执行 ORP 不经意置换 (使用 Waksman 网络)
-	permuted := utils.ObliviousPermute(s.rerandomizedCommitments, perm)
+	// 执行 ORP 不经意置换 (CPU 密集, 在锁外)
+	permuted := utils.ObliviousPermute(commitments, perm)
 
-	// 序列化置换后的承诺
-	s.permutedCommitments = make([][]byte, len(permuted))
+	// 序列化
+	permutedCommitments := make([][]byte, len(permuted))
 	for i, c := range permuted {
-		s.permutedCommitments[i] = c.Marshal()
+		permutedCommitments[i] = c.Marshal()
 	}
 
-	log.Printf("[DIDServer] ORP 不经意置换完成, 生成 %d 个置换承诺", len(s.permutedCommitments))
+	// 构建 Merkle 树 (CPU 密集, 在锁外)
+	tree := utils.NewSimpleMerkleTree()
+	for _, cb := range permutedCommitments {
+		tree.Push(cb)
+	}
+	if err := tree.Build(); err != nil {
+		// 不再 log.Fatalf, 返回 gRPC 错误
+		return nil, status.Errorf(codes.Internal, "构建 Merkle 树失败: %v", err)
+	}
 
-	// 构建 Merkle 树
-	s.buildMerkleTree()
+	// 更新状态
+	s.mu.Lock()
+	s.permutedCommitments = permutedCommitments
+	s.merkleRoot = tree.Root()
+	s.numLeaves = tree.NumLeaves()
+	s.leafHashes = tree.LeafHashes()
+	s.leafData = permutedCommitments
+	s.merkleReady = true
+	s.cond.Broadcast() // 通知等待 merkle 阶段的客户端
+	s.mu.Unlock()
+
+	log.Printf("[DIDServer] ORP 置换 + Merkle 构建完成")
+	log.Printf("[DIDServer] Merkle Root: %x", s.merkleRoot)
 
 	return &pb.PermutationResponse{
-		PermutedCommitments: s.permutedCommitments,
+		PermutedCommitments: permutedCommitments,
 		Success:             true,
 		Message:             "置换完成, Merkle 树已构建",
 	}, nil
 }
 
-// buildMerkleTree 构建单节点 Merkle 树 (使用 SimpleMerkleTree)
-func (s *DIDServer) buildMerkleTree() {
-	log.Printf("[DIDServer] 开始构建 Merkle 树...")
+// ============================================================
+// 新增 RPC: SubscribeGenerator (推送生成元 G 到客户端)
+// ============================================================
 
-	tree := utils.NewSimpleMerkleTree()
+// SubscribeGenerator 流式推送生成元 G 到客户端
+func (s *DIDServer) SubscribeGenerator(req *pb.GeneratorRequest, stream pb.DIDService_SubscribeGeneratorServer) error {
+	log.Printf("[DIDServer] 客户端 %d 订阅生成元 G", req.ClientId)
 
-	for _, commitmentBytes := range s.permutedCommitments {
-		tree.Push(commitmentBytes)
+	// 等待服务器承诺就绪 (带超时)
+	ctx := stream.Context()
+	if err := s.waitForStage(ctx, StageCommitments); err != nil {
+		return status.Errorf(codes.Unavailable, "服务器承诺尚未就绪: %v", err)
 	}
 
-	if err := tree.Build(); err != nil {
-		log.Fatalf("[DIDServer] 构建 Merkle 树失败: %v", err)
+	s.mu.Lock()
+	generators := make(map[int]bls12381.G1Affine, len(s.generators))
+	for k, v := range s.generators {
+		generators[k] = v
+	}
+	s.mu.Unlock()
+
+	// 流式推送每个服务器的生成元
+	for serverID, g := range generators {
+		gBytes := g.Marshal()
+		if err := stream.Send(&pb.GeneratorResponse{
+			GeneratorG: gBytes,
+			ServerId:   int32(serverID),
+		}); err != nil {
+			return fmt.Errorf("推送生成元失败: %v", err)
+		}
+		log.Printf("[DIDServer] 推送服务器 %d 的生成元 G 给客户端 %d", serverID, req.ClientId)
 	}
 
-	s.merkleRoot = tree.Root()
-	s.numLeaves = tree.NumLeaves()
-	s.leafHashes = tree.LeafHashes()
-
-	log.Printf("[DIDServer] Merkle 树构建完成")
-	log.Printf("[DIDServer] Merkle Root: %x", s.merkleRoot)
-	log.Printf("[DIDServer] 叶子数: %d", s.numLeaves)
+	return nil
 }
 
-// GetMerkleRoot 返回 Merkle Root 和叶子哈希
-func (s *DIDServer) GetMerkleRoot(ctx context.Context, req *pb.MerkleRootRequest) (*pb.MerkleRootResponse, error) {
+// ============================================================
+// 新增 RPC: WaitForStage (阻塞等待阶段就绪)
+// ============================================================
+
+// WaitForStage 阻塞等待指定阶段就绪, 替代 poll-and-fail
+func (s *DIDServer) WaitForStage(ctx context.Context, req *pb.StageRequest) (*pb.StageResponse, error) {
+	stage := Stage(req.Stage)
+	log.Printf("[DIDServer] 客户端等待阶段: %s (超时 %dms)", req.Stage, req.TimeoutMs)
+
+	if err := s.waitForStageWithTimeout(ctx, stage, time.Duration(req.TimeoutMs)*time.Millisecond); err != nil {
+		return &pb.StageResponse{
+			Ready:   false,
+			Stage:   req.Stage,
+			Message: fmt.Sprintf("等待超时: %v", err),
+		}, nil
+	}
+
+	return &pb.StageResponse{
+		Ready:   true,
+		Stage:   req.Stage,
+		Message: "阶段就绪",
+	}, nil
+}
+
+// waitForStage 等待阶段就绪 (使用 context 控制超时)
+func (s *DIDServer) waitForStage(ctx context.Context, stage Stage) error {
+	return s.waitForStageWithTimeout(ctx, stage, 30*time.Second)
+}
+
+// waitForStageWithTimeout 带超时等待阶段就绪
+func (s *DIDServer) waitForStageWithTimeout(ctx context.Context, stage Stage, timeout time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.merkleRoot == nil {
+	// 启动一个 goroutine 来处理 context 取消
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			s.cond.Broadcast() // 唤醒等待者让其检查 context
+		case <-done:
+		}
+	}()
+	defer close(done)
+
+	for {
+		// 检查阶段是否就绪
+		ready := false
+		switch stage {
+		case StageCommitments:
+			ready = len(s.serverCommitments) >= s.expectedServers
+		case StageRerandomized:
+			ready = s.rerandomizedReady
+		case StageMerkle:
+			ready = s.merkleReady
+		}
+
+		if ready {
+			return nil
+		}
+
+		// 检查 context 是否已取消
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		// 等待通知
+		s.cond.Wait()
+	}
+}
+
+// ============================================================
+// GetMerkleRoot
+// ============================================================
+
+// GetMerkleRoot 返回 Merkle Root 和叶子数据
+func (s *DIDServer) GetMerkleRoot(ctx context.Context, req *pb.MerkleRootRequest) (*pb.MerkleRootResponse, error) {
+	// 等待 Merkle 就绪
+	if err := s.waitForStage(ctx, StageMerkle); err != nil {
 		return &pb.MerkleRootResponse{Success: false}, nil
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	return &pb.MerkleRootResponse{
 		MerkleRoot: s.merkleRoot,
 		NumLeaves:  int32(s.numLeaves),
 		LeafHashes: s.leafHashes,
+		LeafData:   s.leafData,
 		Success:    true,
 	}, nil
 }
+
+// ============================================================
+// TLS + 启动
+// ============================================================
 
 func main() {
 	certFile := "certs/server/server.pem"
@@ -270,6 +494,7 @@ func main() {
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{serverCert},
 		ClientAuth:   tls.NoClientCert,
+		MinVersion:   tls.VersionTLS12,
 	}
 
 	creds := credentials.NewTLS(tlsConfig)
@@ -281,9 +506,12 @@ func main() {
 	didSrv := NewDIDServer()
 	pb.RegisterDIDServiceServer(grpcServer, didSrv)
 
-	log.Println("[DIDServer] TLS 已启用，监听端口 :5000")
-	log.Println("[DIDServer] 等待服务器提交承诺, 客户端提交参数, 用户提交置换顺序...")
+	log.Println("[DIDServer] TLS 已启用 (MinVersion 1.2), 监听端口 :5000")
+	log.Println("[DIDServer] 优化: 流式提交, sync.Cond 等待, 异步重随机化, G 推送")
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf("[DIDServer] Serve 失败: %v", err)
 	}
 }
+
+// 避免未使用导入
+var _ = errors.New

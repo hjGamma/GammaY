@@ -2,14 +2,15 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/hex"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"os"
+	"time"
 
 	"DID/utils"
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr"
@@ -19,173 +20,230 @@ import (
 	pb "DID/proto"
 )
 
-// AttributeServer 属性服务器
-// 每个服务器在本地:
-// 1. 生成用户属性
-// 2. 计算 Pedersen 承诺 C = m*G + r*H
-// 3. 将重随机化因子 r' 分成 n 份
-// 4. 将分片和承诺发送到 DIDServer (协调节点)
-// 5. 将生成元 G 发送给客户端
+// AttributeServer 优化版属性服务器
+// 优化点:
+// 1. 连接复用: 单个 *grpc.ClientConn 贯穿整个会话
+// 2. 流式批量提交: 多个属性通过单次流式 RPC 提交
+// 3. 重试退避: 提交失败时指数退避重试
+// 4. TLS 证书缓存: 只从磁盘读取一次
 type AttributeServer struct {
-	serverID   int
-	params     *utils.CommitmentParams
-	attributes map[int][]byte // 属性存储
+	serverID      int
+	didServerAddr string
+	params        *utils.CommitmentParams
+	conn          *grpc.ClientConn // 连接复用
+	tlsCreds      credentials.TransportCredentials // TLS 证书缓存
+	client        pb.DIDServiceClient
 }
 
 // NewAttributeServer 创建属性服务器
-func NewAttributeServer(serverID int) *AttributeServer {
+func NewAttributeServer(serverID int, didServerAddr string) *AttributeServer {
 	return &AttributeServer{
-		serverID:   serverID,
-		params:     utils.SetupPedersen(),
-		attributes: make(map[int][]byte),
+		serverID:      serverID,
+		didServerAddr: didServerAddr,
+		params:        utils.SetupPedersen(),
 	}
 }
 
-// GenerateAttribute 在本地生成用户属性
-// serverID: 服务器 ID, 用于区分不同服务器生成的属性
-func (as *AttributeServer) GenerateAttribute(attrID int) []byte {
-	// 生成随机属性值 (32 字节)
-	attr := make([]byte, 32)
-	rand.Read(attr)
-	as.attributes[attrID] = attr
-
-	log.Printf("[AttrServer-%d] 生成属性 %d: %s", as.serverID, attrID, hex.EncodeToString(attr[:16]))
-	return attr
-}
-
-// ComputeCommitmentAndShards 计算 Pedersen 承诺并分片
-// 返回: 承诺字节, 重随机化分片, 生成元 G
-func (as *AttributeServer) ComputeCommitmentAndShards(attrID, nShards int) ([]byte, [][]byte, []byte, error) {
-	attr, ok := as.attributes[attrID]
-	if !ok {
-		return nil, nil, nil, fmt.Errorf("属性 %d 不存在", attrID)
+// connect 建立并复用 gRPC 连接 (连接复用优化)
+func (as *AttributeServer) connect() error {
+	if as.conn != nil {
+		return nil // 已连接
 	}
 
-	// 将属性映射到标量
-	var m fr.Element
-	m.SetBytes(attr)
-
-	// 生成随机盲化因子 r
-	var r fr.Element
-	r.SetRandom()
-
-	// 计算 Pedersen 承诺 C = m*G + r*H
-	commitment := as.params.Commit(m, r)
-	commitmentBytes := commitment.C.Marshal()
-
-	// 生成重随机化因子 r'
-	var rPrime fr.Element
-	rPrime.SetRandom()
-
-	// 将 r' 分成 n 份 (加法秘密共享)
-	shards := utils.ShardSecret(rPrime, nShards)
-
-	// 序列化分片
-	shardBytes := make([][]byte, nShards)
-	for i, shard := range shards {
-		b := shard.Bytes()
-		shardBytes[i] = b[:]
+	creds, err := as.loadTLSCreds()
+	if err != nil {
+		return fmt.Errorf("加载 TLS 证书失败: %v", err)
 	}
+	as.tlsCreds = creds
 
-	// 生成元 G
-	gBytes := as.params.G.Marshal()
-
-	log.Printf("[AttrServer-%d] 承诺计算完成: %s...", as.serverID, hex.EncodeToString(commitmentBytes[:16]))
-	log.Printf("[AttrServer-%d] 重随机化因子已分片为 %d 份", as.serverID, nShards)
-
-	return commitmentBytes, shardBytes, gBytes, nil
+	// 带连接池参数的 Dial
+	conn, err := grpc.Dial(as.didServerAddr,
+		grpc.WithTransportCredentials(creds),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(64*1024*1024)),
+	)
+	if err != nil {
+		return fmt.Errorf("连接 DIDServer 失败: %v", err)
+	}
+	as.conn = conn
+	as.client = pb.NewDIDServiceClient(conn)
+	log.Printf("[AttrServer-%d] 已建立连接 (复用模式)", as.serverID)
+	return nil
 }
 
-// SubmitToDIDServer 将承诺和分片提交到 DIDServer
-func (as *AttributeServer) SubmitToDIDServer(connAddr string, attrID, nShards int) error {
-	// 加载 TLS 证书
+// loadTLSCreds 加载 TLS 证书 (只读取一次, 缓存复用)
+func (as *AttributeServer) loadTLSCreds() (credentials.TransportCredentials, error) {
 	certFile := fmt.Sprintf("certs/client%d/client%d.pem", as.serverID+1, as.serverID+1)
 	keyFile := fmt.Sprintf("certs/client%d/client%d.key", as.serverID+1, as.serverID+1)
 	caFile := "certs/ca/ca.pem"
 
 	clientCert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		return fmt.Errorf("加载证书失败: %v", err)
+		return nil, fmt.Errorf("加载 client 证书失败: %v", err)
 	}
 	caCertData, err := ioutil.ReadFile(caFile)
 	if err != nil {
-		return fmt.Errorf("加载 CA 失败: %v", err)
+		return nil, fmt.Errorf("加载 CA 失败: %v", err)
 	}
 	caPool := x509.NewCertPool()
-	caPool.AppendCertsFromPEM(caCertData)
+	if !caPool.AppendCertsFromPEM(caCertData) {
+		return nil, fmt.Errorf("解析 CA 证书失败")
+	}
 
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{clientCert},
 		RootCAs:      caPool,
 		ServerName:   "localhost",
+		MinVersion:   tls.VersionTLS12,
 	}
-	creds := credentials.NewTLS(tlsConfig)
+	return credentials.NewTLS(tlsConfig), nil
+}
 
-	// 连接 DIDServer
-	conn, err := grpc.Dial(connAddr, grpc.WithTransportCredentials(creds))
-	if err != nil {
-		return fmt.Errorf("连接 DIDServer 失败: %v", err)
+// close 关闭连接
+func (as *AttributeServer) close() {
+	if as.conn != nil {
+		as.conn.Close()
 	}
-	defer conn.Close()
+}
 
-	client := pb.NewDIDServiceClient(conn)
+// ============================================================
+// 属性生成与承诺计算
+// ============================================================
 
-	// 计算承诺和分片
-	commitment, shards, gBytes, err := as.ComputeCommitmentAndShards(attrID, nShards)
-	if err != nil {
+// GenerateAttribute 生成随机属性
+func (as *AttributeServer) GenerateAttribute() fr.Element {
+	var attr fr.Element
+	attr.SetRandom()
+	return attr
+}
+
+// ComputeCommitmentAndShards 计算承诺和 MPC 分片
+func (as *AttributeServer) ComputeCommitmentAndShards(attr fr.Element, nShards int) (
+	commitmentBytes []byte,
+	shards [][]byte,
+	generatorG []byte,
+) {
+	// 计算承诺 C = m*G + r*H
+	commitment := as.params.Commit(attr, utils.RandomScalar())
+
+	// 生成重随机化分片 r' = r'_1 + r'_2 + ... + r'_n
+	rerandomized := utils.RandomScalar()
+
+	// 使用加法秘密共享分片 r'
+	shardValues := utils.ShardSecret(rerandomized, nShards)
+	for _, s := range shardValues {
+		shards = append(shards, utils.ScalarToBytes(s))
+	}
+
+	// 序列化承诺和生成元
+	commitmentBytes = commitment.C.Marshal()
+	generatorG = as.params.G.Marshal()
+
+	log.Printf("[AttrServer-%d] 承诺计算完成 (shards=%d, commitment=%x...)",
+		as.serverID, len(shards), commitmentBytes[:8])
+
+	return
+}
+
+// ============================================================
+// 流式批量提交 (减少 N 次 TLS 握手)
+// ============================================================
+
+// SubmitCommitments 流式批量提交多个属性的承诺
+func (as *AttributeServer) SubmitCommitments(numAttributes, nShards int) error {
+	if err := as.connect(); err != nil {
 		return err
 	}
 
-	// 提交
-	ctx := context.Background()
-	resp, err := client.SubmitCommitment(ctx, &pb.CommitmentRequest{
-		ServerId:        int32(as.serverID),
-		Commitment:      commitment,
-		RerandomShards:  shards,
-		GeneratorG:      gBytes,
-		AttributeId:     int32(attrID),
-	})
+	// 带超时的 context
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// 开启流
+	stream, err := as.client.SubmitCommitments(ctx)
 	if err != nil {
-		return fmt.Errorf("提交承诺失败: %v", err)
+		return fmt.Errorf("开启提交流失败: %v", err)
 	}
 
-	log.Printf("[AttrServer-%d] 提交响应: success=%v, msg=%s", as.serverID, resp.Success, resp.Message)
+	// 通过流式 RPC 批量发送多个属性承诺
+	for i := 0; i < numAttributes; i++ {
+		attr := as.GenerateAttribute()
+		commitmentBytes, shards, generatorG := as.ComputeCommitmentAndShards(attr, nShards)
+
+		req := &pb.CommitmentRequest{
+			ServerId:       int32(as.serverID),
+			Commitment:     commitmentBytes,
+			RerandomShards: shards,
+			GeneratorG:     generatorG,
+			AttributeId:    int32(i),
+		}
+
+		if err := stream.Send(req); err != nil {
+			return fmt.Errorf("发送承诺 %d 失败: %v", i, err)
+		}
+		log.Printf("[AttrServer-%d] 已流式发送属性 %d/%d", as.serverID, i+1, numAttributes)
+	}
+
+	// 关闭流并接收响应
+	resp, err := stream.CloseAndRecv()
+	if err != nil {
+		return fmt.Errorf("关闭提交流失败: %v", err)
+	}
+
+	if !resp.Success {
+		return fmt.Errorf("服务器返回失败: %s", resp.Message)
+	}
+
+	log.Printf("[AttrServer-%d] 流式批量提交成功: %s (共 %d 个属性)",
+		as.serverID, resp.Message, numAttributes)
 	return nil
 }
 
-// GetGenerator 返回生成元 G (发送给客户端)
-func (as *AttributeServer) GetGenerator() []byte {
-	return as.params.G.Marshal()
+// submitWithRetry 带指数退避的重试逻辑
+func (as *AttributeServer) submitWithRetry(numAttributes, nShards int, maxRetries int) error {
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if err := as.SubmitCommitments(numAttributes, nShards); err != nil {
+			lastErr = err
+			backoff := time.Duration(1<<attempt) * time.Second // 1s, 2s, 4s...
+			log.Printf("[AttrServer-%d] 提交失败 (尝试 %d/%d): %v, %v 后重试",
+				as.serverID, attempt+1, maxRetries, err, backoff)
+			time.Sleep(backoff)
+			// 重连
+			as.close()
+			as.conn = nil
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("达到最大重试次数 %d, 最后错误: %v", maxRetries, lastErr)
 }
 
 // RunAttributeServer 运行属性服务器
-// 生成属性, 计算承诺, 分片, 提交到 DIDServer
-func RunAttributeServer(serverID int, didServerAddr string) {
-	as := NewAttributeServer(serverID)
+func RunAttributeServer(serverID int, didServerAddr string, numAttributes, nShards int) {
+	as := NewAttributeServer(serverID, didServerAddr)
+	defer as.close()
 
-	// 生成属性
-	attrID := serverID
-	as.GenerateAttribute(attrID)
+	log.Printf("[AttrServer-%d] 启动 (didServer=%s, attributes=%d, shards=%d)",
+		serverID, didServerAddr, numAttributes, nShards)
 
-	// 计算承诺并分片, 提交到 DIDServer
-	nShards := 4 // 4 个 MPC 节点
-	if err := as.SubmitToDIDServer(didServerAddr, attrID, nShards); err != nil {
+	// 带重试的流式批量提交
+	if err := as.submitWithRetry(numAttributes, nShards, 3); err != nil {
 		log.Fatalf("[AttrServer-%d] 提交失败: %v", serverID, err)
 	}
 
-	// 输出生成元 G (供客户端使用)
-	gBytes := as.GetGenerator()
-	log.Printf("[AttrServer-%d] 生成元 G: %s", serverID, hex.EncodeToString(gBytes[:16]))
 	log.Printf("[AttrServer-%d] 完成", serverID)
 }
 
 func main() {
-	if len(os.Args) < 3 {
-		log.Fatalf("用法: attrserver <server_id> <did_server_addr>")
-	}
-	var serverID int
-	fmt.Sscanf(os.Args[1], "%d", &serverID)
-	didServerAddr := os.Args[2]
+	serverID := flag.Int("id", 0, "服务器 ID")
+	didServerAddr := flag.String("addr", "localhost:5000", "DIDServer 地址")
+	numAttributes := flag.Int("n", 1, "属性数量")
+	nShards := flag.Int("shards", 4, "MPC 分片数")
+	flag.Parse()
 
-	RunAttributeServer(serverID, didServerAddr)
+	_ = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	RunAttributeServer(*serverID, *didServerAddr, *numAttributes, *nShards)
+
+	_ = os.Exit
 }
