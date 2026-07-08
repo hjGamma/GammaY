@@ -2,56 +2,234 @@ syntax = "proto3";
 package proto;
 option go_package = "DID/proto";
 
+// ============================================================
+// DID 新架构: Pedersen 承诺 + MPC 重随机化 + ORP 不经意置换
+// ============================================================
+
+// DIDService 是新架构的核心协调服务
+// 服务器生成属性与 Pedersen 承诺, 计算分片发送到 MPC 节点
+// 客户端基于 g 计算新参数, 分片发送到 MPC 节点
+// MPC 节点执行重随机化与不经意置换
+service DIDService {
+  // 服务器端: 流式批量提交属性承诺与 MPC 分片 (减少 N 次 TLS 握手开销)
+  rpc SubmitCommitments(stream CommitmentRequest) returns (CommitmentResponse);
+
+  // 客户端: 接收生成元 g, 提交客户端参数分片
+  rpc SubmitClientParams(ClientParamsRequest) returns (ClientParamsResponse);
+
+  // 用户: 提交属性置换顺序 (用于 ORP)
+  rpc SubmitPermutation(PermutationRequest) returns (PermutationResponse);
+
+  // 获取最终 Merkle Root
+  rpc GetMerkleRoot(MerkleRootRequest) returns (MerkleRootResponse);
+
+  // 客户端订阅生成元 G (服务器推送 G 到客户端, 替代本地伪造)
+  rpc SubscribeGenerator(GeneratorRequest) returns (stream GeneratorResponse);
+
+  // 等待阶段完成 (阻塞等待直到指定阶段就绪, 替代 poll-and-fail)
+  rpc WaitForStage(StageRequest) returns (StageResponse);
+}
+
+// MPCNodeService - MPC 节点服务 (基于消息队列模式)
+// 每个 MPC 节点作为独立 gRPC 服务, 接收分片并计算贡献
+// 协调节点通过此服务与各 MPC 节点通信, 实现真正的分布式 MPC
+service MPCNodeService {
+  // 接收服务器分片 (流式, 支持批量)
+  rpc ReceiveShards(stream ShardMessage) returns (MPCResponse);
+
+  // 接收客户端分片
+  rpc ReceiveClientShard(ClientShardMessage) returns (MPCResponse);
+
+  // 请求节点计算重随机化贡献
+  rpc ComputeContribution(ComputeRequest) returns (ContributionResponse);
+
+  // 置换分片 (ORP 协作)
+  rpc PermuteShards(PermuteRequest) returns (MPCResponse);
+
+  // 健康检查
+  rpc HealthCheck(HealthRequest) returns (HealthResponse);
+}
+
+// ============================================================
+// 消息定义
+// ============================================================
+
+// CommitmentRequest - 服务器提交属性承诺与分片
+message CommitmentRequest {
+  int32 server_id = 1;             // 服务器 ID
+  bytes commitment = 2;           // Pedersen 承诺 C = m*G + r*H (序列化)
+  repeated bytes rerandom_shards = 3; // 重随机化分片 r'_i (每个分片对应一个 MPC 节点)
+  bytes generator_g = 4;           // 生成元 G (发送给客户端)
+  int32 attribute_id = 5;          // 属性 ID
+}
+
+// CommitmentResponse - 服务器提交响应
+message CommitmentResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// ClientParamsRequest - 客户端参数分片
+message ClientParamsRequest {
+  repeated bytes client_shards = 1; // 客户端参数分片 (每个分片对应一个 MPC 节点)
+  int32 client_id = 2;
+}
+
+// ClientParamsResponse - 客户端提交响应
+message ClientParamsResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// PermutationRequest - 用户提交置换顺序
+message PermutationRequest {
+  repeated int32 permutation = 1; // 置换数组 π
+  int32 user_id = 2;
+}
+
+// PermutationResponse - 置换响应 (包含置换后的承诺)
+message PermutationResponse {
+  repeated bytes permuted_commitments = 1; // 置换后的重随机化承诺
+  bool success = 2;
+  string message = 3;
+}
+
+// MerkleRootRequest - 请求 Merkle Root
+message MerkleRootRequest {}
+
+// MerkleRootResponse - Merkle Root 响应
+message MerkleRootResponse {
+  bytes merkle_root = 1;
+  int32 num_leaves = 2;
+  repeated bytes leaf_hashes = 3; // 叶子哈希 (用于 proof 生成)
+  repeated bytes leaf_data = 4;  // 叶子原始数据 (用于 proof 生成)
+  bool success = 5;
+}
+
+// ============================================================
+// 新增: 生成元订阅、阶段等待、MPC 节点通信消息
+// ============================================================
+
+// GeneratorRequest - 客户端请求订阅生成元 G
+message GeneratorRequest {
+  int32 client_id = 1;
+}
+
+// GeneratorResponse - 服务器推送的生成元 G
+message GeneratorResponse {
+  bytes generator_g = 1;
+  int32 server_id = 2;
+}
+
+// StageRequest - 等待指定阶段就绪
+message StageRequest {
+  string stage = 1;  // "commitments" | "rerandomized" | "merkle"
+  int32 timeout_ms = 2; // 超时毫秒, 0 表示无限等待
+}
+
+// StageResponse - 阶段就绪响应
+message StageResponse {
+  bool ready = 1;
+  string stage = 2;
+  string message = 3;
+}
+
+// ============================================================
+// MPC 节点通信消息 (消息队列模式)
+// ============================================================
+
+// ShardMessage - 发送到 MPC 节点的分片消息
+message ShardMessage {
+  int32 node_id = 1;            // 目标 MPC 节点 ID
+  int32 server_id = 2;          // 来源服务器 ID
+  int32 attribute_id = 3;       // 属性 ID
+  bytes commitment = 4;         // 原始 Pedersen 承诺
+  bytes rerandom_share = 5;     // 重随机化分片
+}
+
+// ClientShardMessage - 客户端分片消息
+message ClientShardMessage {
+  int32 node_id = 1;            // 目标 MPC 节点 ID
+  bytes client_share = 2;       // 客户端参数分片
+}
+
+// MPCResponse - MPC 节点通用响应
+message MPCResponse {
+  bool success = 1;
+  string message = 2;
+  int32 node_id = 3;
+}
+
+// ComputeRequest - 请求 MPC 节点计算贡献
+message ComputeRequest {
+  int32 node_id = 1;
+}
+
+// ContributionResponse - MPC 节点的重随机化贡献
+message ContributionResponse {
+  int32 node_id = 1;
+  map<int32, bytes> contributions = 2; // attribute_id -> 贡献 (G1Affine 序列化)
+  bool success = 3;
+  string message = 4;
+}
+
+// PermuteRequest - 置换请求 (ORP 协作)
+message PermuteRequest {
+  int32 node_id = 1;
+  repeated int32 permutation = 2;
+}
+
+// HealthRequest - 健康检查请求
+message HealthRequest {}
+
+// HealthResponse - 健康检查响应
+message HealthResponse {
+  bool healthy = 1;
+  int32 node_id = 2;
+  int32 pending_shards = 3;
+  string message = 4;
+}
+
+// ============================================================
+// 兼容: 原有 MatchService 和 ChatService (保留供旧流程使用)
+// ============================================================
 
 service MatchService {
   rpc Register(RegisterRequest) returns (MatchResponse);
-
   rpc SubmitResult(ResultRequest) returns (ResultResponse);
-
   rpc SignMessage(SignRequest) returns (SignResponse);
 }
 
 message RegisterRequest {
-
   string address = 1;
 }
 
 message MatchResponse {
-
   string peer_address = 1;
-
   int32 peer_sequence = 2;
 }
 
-
-// 结果提交与返回
-
 message ResultRequest {
-  // 自己在配对时得到的序号
   int32 sequence = 1;
-  // 客户端本地计算出的结果（可根据实际类型调整）
   bytes result_data = 2;
 }
 
 message ResultResponse {
-  // 服务器处理后的结果
   bytes processed_data = 1;
 }
 
-// 消息签名
-message SignRequest{
-  bytes signed_message =1;
-  bytes public_key=2;
+message SignRequest {
+  bytes signed_message = 1;
+  bytes public_key = 2;
 }
 
-message SignResponse{
-  bytes aggr_result=1;
-  bytes merkle_root=2;
+message SignResponse {
+  bytes aggr_result = 1;
+  bytes merkle_root = 2;
 }
 
 // 点对点：ChatService
 service ChatService {
-  // 双向流通信
   rpc Chat(stream Message) returns (stream Message);
 }
 
